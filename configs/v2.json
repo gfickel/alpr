@@ -1,0 +1,19 @@
+{
+    "img_height": 32,
+    "img_width": 128,
+    "patch_size": [
+        32,
+        8
+    ],
+    "batch_size": 1024,
+    "embed_dim": 384,
+    "num_heads": 12,
+    "num_encoder_layers": 12,
+    "num_decoder_layers": 6,
+    "max_sequence_length": 7,
+    "dropout": 0.2,
+    "emb_dropout": 0.2,
+    "version": "v2",
+    "norm_image": 1,
+    "device": 0
+}

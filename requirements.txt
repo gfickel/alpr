@@ -1,0 +1,14 @@
+einops
+numpy
+google-api-python-client
+google-auth-oauthlib
+levenshtein
+matplotlib
+omegaconf
+pandas
+Pillow
+timm>=0.9
+wandb
+torchinfo
+# torch==2.1
+# openmim
