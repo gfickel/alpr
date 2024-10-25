@@ -1,3 +1,4 @@
+dlib
 einops
 numpy
 google-api-python-client
@@ -7,6 +8,7 @@ matplotlib
 omegaconf
 pandas
 Pillow
+scipy
 timm>=0.9
 wandb
 torchinfo

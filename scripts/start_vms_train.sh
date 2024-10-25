@@ -1,3 +1,3 @@
 #!/bin/bash
 
-cloud_setup.sh 8 RTX_3090 10"
+scripts/cloud_setup.sh 2 RTX_3090 20"

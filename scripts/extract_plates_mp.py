@@ -66,7 +66,7 @@ def process_images(csv_file, input_dir, output_dir, num_workers):
     pool.join()
 
 if __name__ == "__main__":
-    for category in ['ccpd_weather', 'ccpd_blur', 'ccpd_challenge', 'ccpd_db', 'ccpd_fn', 'ccpd_np', 'ccpd_tilt', 'ccpd_weather']:
+    for category in ['ccpd_base']:#, 'ccpd_weather', 'ccpd_blur', 'ccpd_challenge', 'ccpd_db', 'ccpd_fn', 'ccpd_np', 'ccpd_tilt', 'ccpd_weather']:
         # Define the path to the CSV file
         csv_file = f'../alpr_datasets/CCPD2019/{category}/alpr_annotation.csv'
 

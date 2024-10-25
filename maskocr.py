@@ -2,6 +2,7 @@ import math
 import random
 import time
 
+import dlib
 import wandb
 import torch
 import torch.nn as nn
@@ -10,10 +11,13 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from utils import *
 from vit_mae import ViT, MAE
+# from dlib_loss_plateu import is_in_plateau
 
 
-
-
+def is_in_plateau(vec, threshold):
+    dlib_simple = dlib.count_steps_without_decrease(vec)
+    dlib_robust = dlib.count_steps_without_decrease_robust(vec)
+    return dlib_simple > threshold and dlib_robust > threshold
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len):
@@ -170,18 +174,24 @@ def text_recognition_loss(predictions, targets, padding_idx):
     return loss_fn(predictions, targets)
 
 
-def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, num_epochs=10, start_epoch=0, temp_model_path=None, version='', start_lr=1e-4, use_wandb=False):
+def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, num_epochs=10, start_epoch=0, temp_model_path=None,
+                             version='', start_lr=1e-4, plateau_threshold=-1, use_wandb=False):
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
-    scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-5)
+    if plateau_threshold < 0:
+        scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-5)
+
     fig, axes, fig2, axes2 = None, None, None, None
+    curr_lr = start_lr
 
     # Load optimizer and scheduler states if resuming
     if start_epoch > 0 and temp_model_path:
         checkpoint = torch.load(temp_model_path)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        if plateau_threshold < 0:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     
+    loss_history = []
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
         model.train()
@@ -196,9 +206,9 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
             loss.backward()
             optimizer.step()
             
-            total_loss += loss.item()
+            loss_history.append(loss.item())
         
-        avg_loss = total_loss / len(dataloader)
+        avg_loss = np.mean(loss_history)
 
 
         # Calculate validation loss
@@ -212,11 +222,22 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
         
         avg_val_loss = total_val_loss / len(val_dataloader)
 
-        scheduler.step()
+        if plateau_threshold < 0:
+            scheduler.step()
+            curr_lr = scheduler.get_last_lr()[0]
+        else:
+            if is_in_plateau(loss_history, threshold=plateau_threshold):
+                # Reduce learning rate
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= 0.1
+                    curr_lr = param_group['lr']
+                loss_history = []
+                print(f"{version} - Learning rate reduced to {curr_lr}")
+
         print(f"{version} - Epoch {epoch+1}/{num_epochs}, "
             f"Train Loss: {avg_loss:.4f}, "
             f"Val Loss: {avg_val_loss:.4f}, "
-            f"lr: {scheduler.get_last_lr()[0]:.6f}, "
+            f"lr: {curr_lr:.6f}, "
             f"Time: {time.time() - epoch_start_time:.2f} seconds")
         
         if use_wandb:
@@ -224,7 +245,7 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
                 "epoch": epoch + 1,
                 "train_loss": avg_loss,
                 "val_loss": avg_val_loss,
-                "learning_rate": scheduler.get_last_lr()[0],
+                "learning_rate": curr_lr,
                 "epoch_time": time.time() - epoch_start_time,
             })
 
@@ -232,12 +253,16 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
         # fig2, axes2 = plot_reconstructed_images(fig2, axes2, model, val_dataloader, device)
 
         # Save checkpoint at the end of each epoch
-        torch.save({
+        
+        state_dict = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
-        }, temp_model_path)
+        }
+        if plateau_threshold < 0:
+            state_dict['scheduler_state_dict'] = scheduler.state_dict()
+
+        torch.save(state_dict, temp_model_path)
 
 def visual_pretraining_loss(decoded_patches, true_patch_values, predicted_masked_representations, true_masked_representations, lambda_value=0.05):
     # decoded_patches shape: [num_masked_patches, batch_size, patch_dim]
@@ -258,26 +283,30 @@ def create_vertical_strip_mask(batch_size, num_patches, mask_ratio):
         mask[i, masked_indices] = True
     return mask
 
-def train_text_recognition(model, dataloader, val_dataloader, device, vocab, freeze_encoder, num_epochs=60, start_epoch=0, temp_model_path=None, version='', start_lr=1e-4, use_wandb=False):
+def train_text_recognition(model, dataloader, val_dataloader, device, vocab, freeze_encoder, num_epochs=60, start_epoch=0,
+                           temp_model_path=None, version='', start_lr=1e-4, plateau_threshold=-1, use_wandb=False):
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
-    scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-5)
+    if plateau_threshold < 0:
+        scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-5)
     fig, axes = None, None
+    curr_lr = start_lr
 
     # Load optimizer and scheduler states if resuming
     if start_epoch > 0 and temp_model_path:
         checkpoint = torch.load(temp_model_path)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        if plateau_threshold < 0:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
     # Freeze Encoder?
     for param in model.encoder.parameters():
         param.requires_grad = not freeze_encoder
     
+    loss_history = []
     for epoch in range(start_epoch, num_epochs, 1):
         epoch_start_time = time.time()
         model.train()
-        total_loss = 0
         for images, text_indices in dataloader:
             images = images.to(device)
             text_indices = text_indices.to(device)
@@ -290,9 +319,9 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
             loss.backward()
             optimizer.step()
             
-            total_loss += loss.item()
+            loss_history.append(loss.item())
         
-        avg_loss = total_loss / len(dataloader)
+        avg_loss = np.mean(loss_history)
 
         # Calculate validation loss
         model.eval()
@@ -309,11 +338,25 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
 
         avg_val_loss = total_val_loss / len(val_dataloader)
 
-        scheduler.step()
+
+        if plateau_threshold < 0:
+            scheduler.step()
+            curr_lr = scheduler.get_last_lr()[0]
+        else:
+            if is_in_plateau(loss_history, threshold=plateau_threshold):
+                # Reduce learning rate
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= 0.5
+                    curr_lr = param_group['lr']
+                loss_history = []
+
+                print(f"{version} - Learning rate reduced to {curr_lr}")
+                
+
         print(f"{version} - Epoch {epoch+1}/{num_epochs}, "
             f"Train Loss: {avg_loss:.4f}, "
             f"Val Loss: {avg_val_loss:.4f}, "
-            f"lr: {scheduler.get_last_lr()[0]:.6f}, "
+            f"lr: {curr_lr:.6f}, "
             f"Time: {time.time() - epoch_start_time:.2f} seconds")
         
         if use_wandb:
@@ -321,7 +364,7 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
                 "epoch": epoch + 1,
                 "train_loss": avg_loss,
                 "val_loss": avg_val_loss,
-                "learning_rate": scheduler.get_last_lr()[0],
+                "learning_rate": curr_lr,
                 "epoch_time": time.time() - epoch_start_time,
             })
 
@@ -329,12 +372,15 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
         # fig, axes = plot_examples(fig, axes, model, val_dataloader, device, vocab)
 
         # Save checkpoint at the end of each epoch
-        torch.save({
+        state_dict = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
-        }, temp_model_path)
+        }
+        if plateau_threshold < 0:
+            state_dict['scheduler_state_dict'] = scheduler.state_dict()
+
+        torch.save(state_dict, temp_model_path)
 
 def create_char_and_patch_masks(batch_size, num_patches, num_chars, mask_ratio=0.15):
     char_mask = torch.rand(batch_size, num_chars) < mask_ratio

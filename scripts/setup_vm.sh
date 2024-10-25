@@ -79,12 +79,16 @@ setup_vm() {
     ssh $ssh_options $vm_name << EOF
         # Source environment setup files
         source /root/.bashrc
-        apt install -y unzip
+        apt install -y unzip cmake build-essential g++
         cd /workspace/alpr/ && /opt/conda/bin/python -m pip install -r requirements.txt
-        /opt/conda/bin/python /workspace/alpr/download_files.py 1-j2ua0SBlRBmdK0AP47GV9AxOXKAWP7d /workspace/
+        /opt/conda/bin/python /workspace/alpr/scripts/download_files.py 1-j2ua0SBlRBmdK0AP47GV9AxOXKAWP7d /workspace/
         unzip -q /workspace/output_images_plates_gt.zip -d /workspace/
-        /opt/conda/bin/python /workspace/alpr/download_files.py 1b7bY2JP_XcQ2u4XNNWt9b5q03R0YJjDO /workspace/
+        /opt/conda/bin/python /workspace/alpr/scripts/download_files.py 1b7bY2JP_XcQ2u4XNNWt9b5q03R0YJjDO /workspace/
         unzip -q /workspace/plates_ccpd_weather.zip -d /workspace/
+        /opt/conda/bin/python /workspace/alpr/scripts/download_files.py 1PlhSzvJIo8_EbdzU9gZ9MUchfvs1lrNX /workspace/
+        unzip -q /workspace/plates_ccpd_base_48.zip -d /workspace/
+        /opt/conda/bin/python /workspace/alpr/scripts/download_files.py 1Vhz1w79RH-wabCHX_3Po1cG-VWIdRNOM /workspace/
+        unzip -q /workspace/plates_ccpd_weather_48.zip -d /workspace/
 EOF
     echo "Setup completed for $vm_name"
 }

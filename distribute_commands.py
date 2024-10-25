@@ -86,10 +86,12 @@ def main(N, initial_version):
     #     'norm_image': ['1'],
     # }
     configurations = {
-        'patch_size': ['32 8'],
-        'batch_size': ['2048'],
+        'patch_size': ['48 8'],
+        'img_height': ['48'],
+        'img_width': ['192'],
+        'batch_size': ['1536'],
         'embed_dim': ['624'],
-        'num_heads': ['8'],
+        'num_heads': ['12'],
         'num_encoder_layers': ['12'],
         'num_decoder_layers': ['4'],
         'max_sequence_length': ['7'],
@@ -97,7 +99,9 @@ def main(N, initial_version):
         'emb_dropout': ['0.2'],
         'norm_image': ['1'],
         'overlap': ['0'],
-        'start_lr': [str(1e-3)]
+        'start_lr': [str(1e-3)],
+        'plateau_thr': ['500', '-1'],
+        'wandb': ['']
     }
 
     # Generate all combinations of arguments

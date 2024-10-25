@@ -8,7 +8,7 @@ actual_vms=$((actual_vms - 1 - 1))
 echo "Number of VMs detected: $actual_vms"
 
 # Command to run on each VM
-command="python upload_files.py model_bin/* configs/*"
+command="python scripts/upload_files.py model_bin/* configs/*"
 
 # Loop through each VM and run the command
 for ((i=1; i<=actual_vms; i++)); do

@@ -131,7 +131,7 @@ def train_model(model, train_function, train_dataloader, val_dataloader, device,
 
     # Initialize wandb
     if use_wandb:
-        wandb.init(project="alpr_ocr", config=config)
+        wandb.init(project="alpr_ocr", config=config, group=train_kwargs['version'], name=model_name)
         wandb.watch(model)
 
     # Train the model
@@ -172,6 +172,7 @@ def parse_arguments():
     parser.add_argument('--overlap', type=int, default=0, help='Patch Overlap')
     parser.add_argument('--device', type=int, default=0, help='Normalize the input image')
     parser.add_argument('--start_lr', type=float, default=1e-4, help='Starting learning rate')
+    parser.add_argument('--plateau_thr', type=int, default=-1, help='Number of batches to use on dlib plateau detection')
     parser.add_argument('--wandb', action='store_true', help='Whether to log with wandb or not')
     
     args = parser.parse_args()
@@ -181,27 +182,17 @@ def save_arguments_to_json(args, filename):
     # Convert args namespace to dictionary
     args_dict = vars(args)
     
-    # Convert Path objects to strings if any
-    # for key, value in args_dict.items():
-    #     if isinstance(value, Path):
-    #         args_dict[key] = str(value)
-    
-    # Save to JSON file
     with open(filename, 'w') as f:
         json.dump(args_dict, f, indent=4)
     
     print(f"Arguments saved to {filename}")
 
 def main():
-    # Usage example
-
     cfg = parse_arguments()
     save_arguments_to_json(cfg, os.path.join('configs', f'{cfg.version}.json'))
-    # current_device = int(os.environ.get('CUDA_VISIBLE_DEVICES', '-1'))
     current_device = cfg.device
     device = torch.device(f'cuda:{current_device}' if torch.cuda.is_available() else 'cpu')
-    print('device', device)
-
+    
     vocab = FULL_ALPHABET
     vocab_size = len(vocab)+1
 
@@ -209,28 +200,29 @@ def main():
                     cfg.num_decoder_layers, vocab_size, cfg.max_sequence_length, dropout=cfg.dropout, emb_dropout=cfg.emb_dropout,
                     overlap=cfg.overlap)
 
-    # train_dataset = SyntheticOCRDataset(vocab, max_sequence_length, 50000)
-    # train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=4)
-
-    # val_dataset = SyntheticOCRDataset(vocab, max_sequence_length, batch_size*4)
-    # val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
     data_transform = transforms.Compose([
-        # transforms.ToPILImage(),
         transforms.RandAugment(num_ops=3, magnitude=7),
         transforms.ToTensor(),
         transforms.Lambda(lambda img: img.float() / (255.0 if cfg.norm_image else 1.0)),
     ])
+
+    local_path = '.' if torch.cuda.is_available() else 'alpr_datasets'
+    if cfg.img_height == 32:
+        train_ds = 'output_images_plates_gt'
+        val_ds = 'plates_ccpd_weather'
+    elif cfg.img_height == 48:
+        train_ds = 'plates_ccpd_base_48'
+        val_ds = 'plates_ccpd_weather_48'
+
     train_dataset = ALPRDataset(
-        '../output_images_plates_gt/alpr_annotation.csv',
-        '../output_images_plates_gt/', #None)
-        # '../alpr_datasets/output_images_plates_gt/alpr_annotation.csv',
-        # '../alpr_datasets/output_images_plates_gt/', #None)
+        f'../{local_path}/{train_ds}/alpr_annotation.csv',
+        f'../{local_path}/{train_ds}/', #None)
         data_transform)
     train_dataloader = DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, pin_memory=True, num_workers=4, drop_last=True)
 
     val_dataset = ALPRDataset(
-        '../plates_ccpd_weather/alpr_annotation.csv',
-        '../plates_ccpd_weather/', #None)
+        f'../{local_path}/{val_ds}/alpr_annotation.csv',
+        f'../{local_path}/{val_ds}/', #None)
         data_transform)
     val_dataloader = DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=True, pin_memory=True, num_workers=2, drop_last=False)
 
@@ -238,19 +230,16 @@ def main():
 
     train_model(model, train_visual_pretraining, train_dataloader, val_dataloader, device, vocab,
                 model_name=f'train_visual_pretraining_{cfg.version}', num_epochs=6, version=cfg.version,
-                start_lr=cfg.start_lr, use_wandb=cfg.wandb, config=cfg)
-    # train_language_pretraining(model, train_dataloader, device, vocab)
+                start_lr=cfg.start_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
     
     # Then, train for text recognition
     train_model(model, train_text_recognition, train_dataloader, val_dataloader, device, vocab,
                 model_name=f'train_text_recognition_{cfg.version}', num_epochs=20, freeze_encoder=True,
-                version=cfg.version, start_lr=cfg.start_lr, use_wandb=cfg.wandb, config=cfg)
+                version=cfg.version, start_lr=cfg.start_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
     train_model(model, train_text_recognition, train_dataloader, val_dataloader, device, vocab,
                 model_name=f'train_text_recognition_full_{cfg.version}', num_epochs=120, freeze_encoder=False,
-                version=cfg.version, start_lr=cfg.start_lr, use_wandb=cfg.wandb, config=cfg)
+                version=cfg.version, start_lr=cfg.start_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
     torch.save(model.state_dict(), f'model_bin/my_model_{cfg.version}.pth')
 
 if __name__ == "__main__":
-    import time
-    time.sleep(random.uniform(0, 3))
     main()
