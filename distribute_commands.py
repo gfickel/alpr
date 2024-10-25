@@ -92,15 +92,15 @@ def main(N, initial_version):
         'batch_size': ['1536'],
         'embed_dim': ['624'],
         'num_heads': ['12'],
-        'num_encoder_layers': ['12'],
-        'num_decoder_layers': ['4'],
+        'num_encoder_layers': ['12', '8'],
+        'num_decoder_layers': ['4', '3'],
         'max_sequence_length': ['7'],
-        'dropout': ['0.2'],
-        'emb_dropout': ['0.2'],
+        'dropout': ['0.5'],
+        'emb_dropout': ['0.5'],
         'norm_image': ['1'],
         'overlap': ['0'],
         'start_lr': [str(1e-3)],
-        'plateau_thr': ['500', '-1'],
+        'plateau_thr': ['500'],
         'wandb': ['']
     }
 

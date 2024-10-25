@@ -1,9 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.join(os.path.abspath(__file__))), '..' ))
+
 from dlib_loss_plateu import *
 import numpy as np
-import torch
 import dlib
-from typing import List, Tuple, Callable
-from scipy import stats
+from typing import List, Tuple
+
 
 def generate_large_test_cases() -> List[Tuple[str, List[float], bool]]:
     """Generate various test cases with large samples."""
@@ -118,7 +121,7 @@ def generate_large_test_cases() -> List[Tuple[str, List[float], bool]]:
     ))
     
     # 12. Random walk with trend (1500 elements)
-    random_walk = np.random.normal(0, 0.00001, 1500).cumsum()
+    random_walk = np.random.normal(0, 0.01, 1500).cumsum()
     trend = np.linspace(1.0, 0.1, 1500)
     values = trend + random_walk
     test_cases.append((
@@ -167,7 +170,6 @@ def run_comprehensive_tests():
         if result['is_plateau_dlib'] == result['is_plateau_custom']:
             passed_cases.append(case_name)
         else:
-            print(values)
             failed_cases.append({
                 'name': case_name,
                 'size': len(values),
@@ -195,7 +197,7 @@ def run_comprehensive_tests():
     if failed_cases:
         print("\nFailed Cases Summary:")
         print("-" * 80)
-        print(f"{'Case Name':<35} {'Expected':<10} {'Dlib':<10} {'Custom':<10}")
+        print(f"{'Case Name':<35} {'Dlib':<10} {'Custom':<10}")
         print("-" * 80)
         for case in failed_cases:
             print(f"{case['name']:<35} {str(case['dlib_result']):<10} {str(case['custom_result']):<10}")

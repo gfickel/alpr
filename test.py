@@ -63,9 +63,15 @@ if __name__ == '__main__':
     model.load_state_dict(state_dict)
     model.eval()
 
+
+    if cfg.img_height == 32:
+        test_ds = 'plates_ccpd_challenge'
+    elif cfg.img_height == 48:
+        test_ds = 'plates_ccpd_challenge_48'
+
     dataset = ALPRDataset(
-        '../alpr_datasets/plates_ccpd_challenge/alpr_annotation.csv',
-        '../alpr_datasets/plates_ccpd_challenge/', #None)
+        f'../alpr_datasets/{test_ds}/alpr_annotation.csv',
+        f'../alpr_datasets/{test_ds}/', #None)
         # '../alpr_datasets/CCPD2019/alpr_annotation.csv',
         # '../alpr_datasets/CCPD2019/ccpd_base/', #None)
         data_transform,
