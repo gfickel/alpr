@@ -5,7 +5,37 @@ import argparse
 import queue
 import threading
 import os
+import time
 
+def rsync_from_vm(vm_name, remote_path, local_path):
+    """Sync files from VM to local machine"""
+    os.makedirs(local_path, exist_ok=True)
+    
+    rsync_command = [
+        'rsync',
+        '-avz',  # archive mode, verbose, compress
+        f'{vm_name}:{remote_path}',
+        local_path
+    ]
+    
+    try:
+        result = subprocess.run(rsync_command, check=True, capture_output=True, text=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Rsync from VM failed with error: {e}")
+        logging.error(e.stderr)
+        return False
+
+def destroy_vm(vm_name):
+    """Destroy the VM using the destroy-vm script"""
+    try:
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'destroy-vm')
+        result = subprocess.run([script_path, vm_name], check=True, capture_output=True, text=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to destroy VM {vm_name}: {e}")
+        logging.error(e.stderr)
+        return False
 
 def rsync_version_files(source_dir, remote_host, remote_path, version):
     # Find all files in source_dir that have 'version' in their name
@@ -43,6 +73,27 @@ def run_command_on_vm(vm_name, command):
     print(f"Running on {vm_name}: {command}")
     try:
         subprocess.run(ssh_command, shell=True, check=True)
+
+        # After successful command execution, sync back the files
+        print(f"Syncing files back from {vm_name}")
+        model_sync_success = rsync_from_vm(
+            vm_name, 
+            '/workspace/alpr/model_bin/', 
+            'model_bin/'
+        )
+        config_sync_success = rsync_from_vm(
+            vm_name, 
+            '/workspace/alpr/configs/', 
+            'configs/'
+        )
+
+        # If both syncs were successful, destroy the VM
+        if model_sync_success and config_sync_success:
+            print(f"Destroying VM {vm_name}")
+            destroy_success = destroy_vm(vm_name)
+            if not destroy_success:
+                logging.error(f"Failed to destroy VM {vm_name}")
+
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"An error occurred while running command on {vm_name}: {e}")
@@ -63,40 +114,19 @@ def vm_worker(vm_name, command_queue):
 
 def main(N, initial_version):
     # Define the argument combinations you want to try
-    # configurations = {
-    #     'batch_size': ['1024'],
-    #     'embed_dim': ['384', '512', '256'],
-    #     'num_heads': ['12', '8'],
-    #     'num_encoder_layers': ['12', '8'],
-    #     'num_decoder_layers': ['4', '3'],
-    #     'max_sequence_length': ['7'],
-    #     'dropout': ['0.2'],
-    #     'emb_dropout': ['0.2'],
-    #     'norm_image': ['1', '0'],
-    # }
-    # configurations = {
-    #     'batch_size': ['2048'],
-    #     'embed_dim': ['384', '624'],
-    #     'num_heads': ['12'],
-    #     'num_encoder_layers': ['12'],
-    #     'num_decoder_layers': ['4', '6'],
-    #     'max_sequence_length': ['7'],
-    #     'dropout': ['0.2'],
-    #     'emb_dropout': ['0.2'],
-    #     'norm_image': ['1'],
-    # }
     configurations = {
         'patch_size': ['48 8'],
         'img_height': ['48'],
         'img_width': ['192'],
         'batch_size': ['1536'],
+        'epochs': ['400'],
         'embed_dim': ['624'],
         'num_heads': ['12'],
         'num_encoder_layers': ['12', '8'],
         'num_decoder_layers': ['4', '3'],
         'max_sequence_length': ['7'],
-        'dropout': ['0.5'],
-        'emb_dropout': ['0.5'],
+        'dropout': ['0.4'],
+        'emb_dropout': ['0.4'],
         'norm_image': ['1'],
         'overlap': ['0'],
         'start_lr': [str(1e-3)],

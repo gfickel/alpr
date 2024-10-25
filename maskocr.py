@@ -175,11 +175,11 @@ def text_recognition_loss(predictions, targets, padding_idx):
 
 
 def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, num_epochs=10, start_epoch=0, temp_model_path=None,
-                             version='', start_lr=1e-4, plateau_threshold=-1, use_wandb=False):
+                             version='', start_lr=1e-4, min_lr=1e-5, plateau_threshold=-1, use_wandb=False):
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
     if plateau_threshold < 0:
-        scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-5)
+        scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=min_lr)
 
     fig, axes, fig2, axes2 = None, None, None, None
     curr_lr = start_lr
@@ -264,6 +264,9 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
 
         torch.save(state_dict, temp_model_path)
 
+        if curr_lr <= min_lr:
+            break
+
 def visual_pretraining_loss(decoded_patches, true_patch_values, predicted_masked_representations, true_masked_representations, lambda_value=0.05):
     # decoded_patches shape: [num_masked_patches, batch_size, patch_dim]
     # true_patch_values shape: [num_masked_patches, batch_size, patch_dim]
@@ -284,7 +287,7 @@ def create_vertical_strip_mask(batch_size, num_patches, mask_ratio):
     return mask
 
 def train_text_recognition(model, dataloader, val_dataloader, device, vocab, freeze_encoder, num_epochs=60, start_epoch=0,
-                           temp_model_path=None, version='', start_lr=1e-4, plateau_threshold=-1, use_wandb=False):
+                           temp_model_path=None, version='', start_lr=1e-4, min_lr=1e-5, plateau_threshold=-1, use_wandb=False):
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
     if plateau_threshold < 0:
@@ -381,6 +384,9 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
             state_dict['scheduler_state_dict'] = scheduler.state_dict()
 
         torch.save(state_dict, temp_model_path)
+
+        if curr_lr <= min_lr:
+            break
 
 def create_char_and_patch_masks(batch_size, num_patches, num_chars, mask_ratio=0.15):
     char_mask = torch.rand(batch_size, num_chars) < mask_ratio

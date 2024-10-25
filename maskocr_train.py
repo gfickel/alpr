@@ -160,6 +160,7 @@ def parse_arguments():
     parser.add_argument('--img_width', type=int, default=128, help='Width of the input image')
     parser.add_argument('--patch_size', type=int, nargs=2, default=[32, 8], help='Patch size for image processing (height, width)')
     parser.add_argument('--batch_size', type=int, default=512*7, help='Batch size for training')
+    parser.add_argument('--epochs', type=int, default=120, help='Number of text recognition training epochs')
     parser.add_argument('--embed_dim', type=int, default=384, help='Embedding dimension')
     parser.add_argument('--num_heads', type=int, default=12, help='Number of attention heads')
     parser.add_argument('--num_encoder_layers', type=int, default=12, help='Number of encoder layers')
@@ -172,6 +173,7 @@ def parse_arguments():
     parser.add_argument('--overlap', type=int, default=0, help='Patch Overlap')
     parser.add_argument('--device', type=int, default=0, help='Normalize the input image')
     parser.add_argument('--start_lr', type=float, default=1e-4, help='Starting learning rate')
+    parser.add_argument('--min_lr', type=float, default=1e-5, help='Starting learning rate')
     parser.add_argument('--plateau_thr', type=int, default=-1, help='Number of batches to use on dlib plateau detection')
     parser.add_argument('--wandb', action='store_true', help='Whether to log with wandb or not')
     
@@ -229,16 +231,16 @@ def main():
     # summary(model, input_size=(2, 3, cfg.img_height, cfg.img_width), depth=5)
 
     train_model(model, train_visual_pretraining, train_dataloader, val_dataloader, device, vocab,
-                model_name=f'train_visual_pretraining_{cfg.version}', num_epochs=6, version=cfg.version,
-                start_lr=cfg.start_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
+                model_name=f'train_visual_pretraining_{cfg.version}', num_epochs=cfg.epochs//10, version=cfg.version,
+                start_lr=cfg.start_lr, min_lr=cfg.min_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
     
     # Then, train for text recognition
     train_model(model, train_text_recognition, train_dataloader, val_dataloader, device, vocab,
-                model_name=f'train_text_recognition_{cfg.version}', num_epochs=20, freeze_encoder=True,
-                version=cfg.version, start_lr=cfg.start_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
+                model_name=f'train_text_recognition_{cfg.version}', num_epochs=cfg.epochs//6, freeze_encoder=True,
+                version=cfg.version, start_lr=cfg.start_lr, min_lr=cfg.min_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
     train_model(model, train_text_recognition, train_dataloader, val_dataloader, device, vocab,
-                model_name=f'train_text_recognition_full_{cfg.version}', num_epochs=120, freeze_encoder=False,
-                version=cfg.version, start_lr=cfg.start_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
+                model_name=f'train_text_recognition_full_{cfg.version}', num_epochs=cfg.epochs, freeze_encoder=False,
+                version=cfg.version, start_lr=cfg.start_lr, min_lr=cfg.min_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
     torch.save(model.state_dict(), f'model_bin/my_model_{cfg.version}.pth')
 
 if __name__ == "__main__":
