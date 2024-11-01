@@ -29,7 +29,7 @@ def rsync_from_vm(vm_name, remote_path, local_path):
 def destroy_vm(vm_name):
     """Destroy the VM using the destroy-vm script"""
     try:
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'destroy-vm')
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'destroy_vm.sh')
         result = subprocess.run([script_path, vm_name], check=True, capture_output=True, text=True)
         return True
     except subprocess.CalledProcessError as e:
@@ -123,14 +123,14 @@ def main(N, initial_version):
         'embed_dim': ['624'],
         'num_heads': ['12'],
         'num_encoder_layers': ['12', '8'],
-        'num_decoder_layers': ['4', '3'],
+        'num_decoder_layers': ['4', '5'],
         'max_sequence_length': ['7'],
-        'dropout': ['0.4'],
-        'emb_dropout': ['0.4'],
+        'dropout': ['0.15'],
+        'emb_dropout': ['0.15'],
         'norm_image': ['1'],
         'overlap': ['0'],
         'start_lr': [str(1e-3)],
-        'plateau_thr': ['500'],
+        'plateau_thr': ['3'],
         'wandb': ['']
     }
 
