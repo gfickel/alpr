@@ -231,12 +231,12 @@ def main():
     # summary(model, input_size=(2, 3, cfg.img_height, cfg.img_width), depth=5)
 
     train_model(model, train_visual_pretraining, train_dataloader, val_dataloader, device, vocab,
-                model_name=f'train_visual_pretraining_{cfg.version}', num_epochs=cfg.epochs//10, version=cfg.version,
+                model_name=f'train_visual_pretraining_{cfg.version}', num_epochs=cfg.epochs//40, version=cfg.version,
                 start_lr=cfg.start_lr, min_lr=cfg.min_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
     
     # Then, train for text recognition
     train_model(model, train_text_recognition, train_dataloader, val_dataloader, device, vocab,
-                model_name=f'train_text_recognition_{cfg.version}', num_epochs=cfg.epochs//6, freeze_encoder=True,
+                model_name=f'train_text_recognition_{cfg.version}', num_epochs=cfg.epochs//15, freeze_encoder=True,
                 version=cfg.version, start_lr=cfg.start_lr, min_lr=cfg.min_lr, plateau_threshold=cfg.plateau_thr, use_wandb=cfg.wandb, config=cfg)
     train_model(model, train_text_recognition, train_dataloader, val_dataloader, device, vocab,
                 model_name=f'train_text_recognition_full_{cfg.version}', num_epochs=cfg.epochs, freeze_encoder=False,
