@@ -180,8 +180,6 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
     optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
     if plateau_threshold < 0:
         scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=min_lr)
-    else:
-        scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=plateau_threshold, min_lr=min_lr)
 
     fig, axes, fig2, axes2 = None, None, None, None
     curr_lr = start_lr
@@ -190,8 +188,8 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
     if start_epoch > 0 and temp_model_path:
         checkpoint = torch.load(temp_model_path)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        # if plateau_threshold < 0:
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        if plateau_threshold < 0:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     
     loss_history = []
     for epoch in range(num_epochs):
@@ -224,22 +222,22 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
         
         avg_val_loss = total_val_loss / len(val_dataloader)
 
-        if plateau_threshold < 0:
-            scheduler.step()
-        else:
-            scheduler.step(avg_val_loss)
-        curr_lr = scheduler.get_last_lr()[0]
         # if plateau_threshold < 0:
         #     scheduler.step()
-        #     curr_lr = scheduler.get_last_lr()[0]
         # else:
-        #     if is_in_plateau(loss_history, threshold=plateau_threshold):
-        #         # Reduce learning rate
-        #         for param_group in optimizer.param_groups:
-        #             param_group['lr'] *= 0.1
-        #             curr_lr = param_group['lr']
-        #         loss_history = []
-        #         print(f"{version} - Learning rate reduced to {curr_lr}")
+        #     scheduler.step(avg_val_loss)
+        # curr_lr = scheduler.get_last_lr()[0]
+        if plateau_threshold < 0:
+            scheduler.step()
+            curr_lr = scheduler.get_last_lr()[0]
+        else:
+            if is_in_plateau(loss_history, threshold=plateau_threshold):
+                # Reduce learning rate
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= 0.1
+                    curr_lr = param_group['lr']
+                loss_history = []
+                print(f"{version} - Learning rate reduced to {curr_lr}")
 
         print(f"{version} - Epoch {epoch+1}/{num_epochs}, "
             f"Train Loss: {avg_loss:.4f}, "
@@ -266,8 +264,8 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
         }
-        # if plateau_threshold < 0:
-        state_dict['scheduler_state_dict'] = scheduler.state_dict()
+        if plateau_threshold < 0:
+            state_dict['scheduler_state_dict'] = scheduler.state_dict()
 
         torch.save(state_dict, temp_model_path)
 
@@ -299,8 +297,7 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
     optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
     if plateau_threshold < 0:
         scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-5)
-    else:
-        scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=plateau_threshold, min_lr=min_lr)
+
     fig, axes = None, None
     curr_lr = start_lr
 
@@ -308,8 +305,8 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
     if start_epoch > 0 and temp_model_path:
         checkpoint = torch.load(temp_model_path)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        # if plateau_threshold < 0:
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        if plateau_threshold < 0:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
     # Freeze Encoder?
     for param in model.encoder.parameters():
@@ -350,23 +347,23 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
 
         avg_val_loss = total_val_loss / len(val_dataloader)
 
-        if plateau_threshold < 0:
-            scheduler.step()
-        else:
-            scheduler.step(avg_val_loss)
-        curr_lr = scheduler.get_last_lr()[0]
         # if plateau_threshold < 0:
         #     scheduler.step()
-        #     curr_lr = scheduler.get_last_lr()[0]
         # else:
-        #     if is_in_plateau(loss_history, threshold=plateau_threshold):
-        #         # Reduce learning rate
-        #         for param_group in optimizer.param_groups:
-        #             param_group['lr'] *= 0.5
-        #             curr_lr = param_group['lr']
-        #         loss_history = []
+        #     scheduler.step(avg_val_loss)
+        # curr_lr = scheduler.get_last_lr()[0]
+        if plateau_threshold < 0:
+            scheduler.step()
+            curr_lr = scheduler.get_last_lr()[0]
+        else:
+            if is_in_plateau(loss_history, threshold=plateau_threshold):
+                # Reduce learning rate
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= 0.5
+                    curr_lr = param_group['lr']
+                loss_history = []
 
-        #         print(f"{version} - Learning rate reduced to {curr_lr}")
+                print(f"{version} - Learning rate reduced to {curr_lr}")
                 
 
         print(f"{version} - Epoch {epoch+1}/{num_epochs}, "
@@ -393,8 +390,8 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
         }
-        # if plateau_threshold < 0:
-        state_dict['scheduler_state_dict'] = scheduler.state_dict()
+        if plateau_threshold < 0:
+            state_dict['scheduler_state_dict'] = scheduler.state_dict()
 
         torch.save(state_dict, temp_model_path)
 
