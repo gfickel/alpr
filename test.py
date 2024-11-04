@@ -3,6 +3,7 @@ import argparse
 import time
 import os
 import json
+import shutil
 from types import SimpleNamespace   
 
 import torch
@@ -51,7 +52,7 @@ if __name__ == '__main__':
     # val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
     data_transform = transforms.Compose([
         # transforms.ToPILImage(),
-        transforms.RandAugment(num_ops=3, magnitude=7),
+        # transforms.RandAugment(num_ops=3, magnitude=7),
         transforms.ToTensor(),
         transforms.Lambda(lambda img: img.float() / (255.0 if cfg.norm_image else 1.0)),
     ])
@@ -88,13 +89,16 @@ if __name__ == '__main__':
         runtimes.append(time.time()-begin)
         log_ocrs = torch.nn.functional.log_softmax(ocrs_logits.to('cpu'), dim=2)
         ocrs_pred = torch.argmax(log_ocrs, dim=-1)
+        
         for im_idx in range(gt_ocr.shape[0]):
             if len(ocrs_pred[im_idx]) > 0:
-                if torch.equal(ocrs_pred[im_idx], gt_ocr[im_idx]):
+                if torch.equal(ocrs_pred[im_idx][1:], gt_ocr[im_idx][1:]):
                     ocr_correct += 1
                     # print(f'Good: {ocrs_pred[im_idx]} | {gt_ocr[im_idx]}')
                 else:
                     ocr_errors += 1
+                    ocr_text = indices_to_text(ocrs_pred[0].detach().cpu(), vocab)
+                    shutil.copy(images_path[im_idx], f'out_images/{ocr_text}.png')
                     # print(f'Error: {ocrs_pred[im_idx]} | {gt_ocr[im_idx]}')
             else:
                 # print('Missing')

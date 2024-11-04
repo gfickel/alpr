@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import wandb
 
 from utils import *
-from dataloader import ALPRDataset
+from dataloader import ALPRDataset, create_ocr_transform
 from maskocr import *
 
 # Set up interactive mode
@@ -202,11 +202,11 @@ def main():
                     cfg.num_decoder_layers, vocab_size, cfg.max_sequence_length, dropout=cfg.dropout, emb_dropout=cfg.emb_dropout,
                     overlap=cfg.overlap)
 
-    data_transform = transforms.Compose([
-        transforms.RandAugment(num_ops=3, magnitude=7),
+    val_data_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Lambda(lambda img: img.float() / (255.0 if cfg.norm_image else 1.0)),
+        # transforms.Lambda(lambda img: img.float() / (255.0 if cfg.norm_image else 1.0)),
     ])
+    train_data_transform = create_ocr_transform(augment_strength=1.0)
 
     local_path = '.' if torch.cuda.is_available() else 'alpr_datasets'
     if cfg.img_height == 32:
@@ -219,13 +219,13 @@ def main():
     train_dataset = ALPRDataset(
         f'../{local_path}/{train_ds}/alpr_annotation.csv',
         f'../{local_path}/{train_ds}/', #None)
-        data_transform)
+        train_data_transform)
     train_dataloader = DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, pin_memory=True, num_workers=4, drop_last=True)
 
     val_dataset = ALPRDataset(
         f'../{local_path}/{val_ds}/alpr_annotation.csv',
         f'../{local_path}/{val_ds}/', #None)
-        data_transform)
+        val_data_transform)
     val_dataloader = DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=True, pin_memory=True, num_workers=2, drop_last=False)
 
     # summary(model, input_size=(2, 3, cfg.img_height, cfg.img_width), depth=5)
