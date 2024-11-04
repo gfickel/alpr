@@ -1,3 +1,5 @@
+# Most (if not all) of this code came from: https://github.com/lucidrains/vit-pytorch/
+
 import torch
 from torch import nn
 import torch.nn.functional as F
