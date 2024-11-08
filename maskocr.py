@@ -4,6 +4,7 @@ import time
 
 import dlib
 import wandb
+import schedulefree
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -175,10 +176,15 @@ def text_recognition_loss(predictions, targets, padding_idx):
 
 
 def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, num_epochs=10, start_epoch=0, temp_model_path=None,
-                             version='', start_lr=1e-4, min_lr=1e-5, plateau_threshold=-1, use_wandb=False):
+                             version='', start_lr=1e-4, min_lr=1e-5, plateau_threshold=-1, use_wandb=False, use_schedulefree=False):
+    use_schedulefree = True
     model.to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
-    if plateau_threshold < 0:
+    if use_schedulefree:
+        optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
+    else:
+        optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
+        
+    if plateau_threshold < 0 and not use_schedulefree:
         scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=min_lr)
 
     fig, axes, fig2, axes2 = None, None, None, None
@@ -195,6 +201,7 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
         model.train()
+        optimizer.train()
         total_loss = 0
         for images, _ in dataloader:
             images = images.to(device)
@@ -213,6 +220,7 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
 
         # Calculate validation loss
         model.eval()
+        optimizer.eval()
         total_val_loss = 0
         with torch.no_grad():
             for val_images, _ in val_dataloader:
@@ -227,10 +235,10 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
         # else:
         #     scheduler.step(avg_val_loss)
         # curr_lr = scheduler.get_last_lr()[0]
-        if plateau_threshold < 0:
+        if plateau_threshold < 0 and not use_schedulefree:
             scheduler.step()
             curr_lr = scheduler.get_last_lr()[0]
-        else:
+        elif plateau_threshold > 0:
             if is_in_plateau(loss_history, threshold=plateau_threshold):
                 # Reduce learning rate
                 for param_group in optimizer.param_groups:
@@ -264,7 +272,7 @@ def train_visual_pretraining(model, dataloader, val_dataloader, device, vocab, n
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
         }
-        if plateau_threshold < 0:
+        if plateau_threshold < 0 and not use_schedulefree:
             state_dict['scheduler_state_dict'] = scheduler.state_dict()
 
         torch.save(state_dict, temp_model_path)
@@ -292,10 +300,15 @@ def create_vertical_strip_mask(batch_size, num_patches, mask_ratio):
     return mask
 
 def train_text_recognition(model, dataloader, val_dataloader, device, vocab, freeze_encoder, num_epochs=60, start_epoch=0,
-                           temp_model_path=None, version='', start_lr=1e-4, min_lr=1e-5, plateau_threshold=-1, use_wandb=False):
+                           temp_model_path=None, version='', start_lr=1e-4, min_lr=1e-5, plateau_threshold=-1, use_wandb=False,
+                           use_schedulefree=False):
+    use_schedulefree = True
     model.to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
-    if plateau_threshold < 0:
+    if use_schedulefree:
+        optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
+    else:
+        optimizer = optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.05, betas=(.9, .95))
+    if plateau_threshold < 0 and not use_schedulefree:
         scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-5)
 
     fig, axes = None, None
@@ -316,6 +329,7 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
     for epoch in range(start_epoch, num_epochs, 1):
         epoch_start_time = time.time()
         model.train()
+        optimizer.train()
         for images, text_indices in dataloader:
             images = images.to(device)
             text_indices = text_indices.to(device)
@@ -334,6 +348,7 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
 
         # Calculate validation loss
         model.eval()
+        optimizer.eval()
         total_val_loss = 0
         with torch.no_grad():
             for val_images, val_text_indices in val_dataloader:
@@ -352,10 +367,10 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
         # else:
         #     scheduler.step(avg_val_loss)
         # curr_lr = scheduler.get_last_lr()[0]
-        if plateau_threshold < 0:
+        if plateau_threshold < 0 and not use_schedulefree:
             scheduler.step()
             curr_lr = scheduler.get_last_lr()[0]
-        else:
+        elif plateau_threshold > 0:
             if is_in_plateau(loss_history, threshold=plateau_threshold):
                 # Reduce learning rate
                 for param_group in optimizer.param_groups:
@@ -390,7 +405,7 @@ def train_text_recognition(model, dataloader, val_dataloader, device, vocab, fre
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
         }
-        if plateau_threshold < 0:
+        if plateau_threshold < 0 and not use_schedulefree:
             state_dict['scheduler_state_dict'] = scheduler.state_dict()
 
         torch.save(state_dict, temp_model_path)
