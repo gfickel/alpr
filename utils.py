@@ -1,3 +1,5 @@
+# Tons of helper functions, some mine, most from https://github.com/open-mmlab/mmdetection
+
 from typing import Optional, Tuple, Union, Any
 from functools import partial
 import os
@@ -25,7 +27,7 @@ ADS_IDX = [x+len(PROVINCES)+1 for x in range(len(ADS))]
 
 
 def indices_to_text(indices, vocab):
-    return ''.join([vocab[idx.item()] for idx in indices if idx.item() < len(vocab)])
+    return ''.join([vocab[idx.item()-1] for idx in indices if idx.item() < len(vocab)])
 
 def plot_reconstructed_images(fig, axes, model, dataloader, device, num_examples=3, mask_ratio=0.3):
     model.eval()

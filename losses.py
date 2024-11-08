@@ -1,3 +1,5 @@
+# Code from OpenMMLab project, mostly from https://github.com/open-mmlab/mmdetection
+
 from typing import Optional, Callable
 import functools
 
