@@ -26,17 +26,6 @@ def rsync_from_vm(vm_name, remote_path, local_path):
         logging.error(e.stderr)
         return False
 
-def destroy_vm(vm_name):
-    """Destroy the VM using the destroy-vm script"""
-    try:
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'destroy_vm.sh')
-        result = subprocess.run([script_path, vm_name], check=True, capture_output=True, text=True)
-        return True
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to destroy VM {vm_name}: {e}")
-        logging.error(e.stderr)
-        return False
-
 def rsync_version_files(source_dir, remote_host, remote_path, version):
     # Find all files in source_dir that have 'version' in their name
     files_to_sync = [
@@ -87,13 +76,6 @@ def run_command_on_vm(vm_name, command):
             'configs/'
         )
 
-        # If both syncs were successful, destroy the VM
-        if model_sync_success and config_sync_success:
-            print(f"Destroying VM {vm_name}")
-            destroy_success = destroy_vm(vm_name)
-            if not destroy_success:
-                logging.error(f"Failed to destroy VM {vm_name}")
-
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"An error occurred while running command on {vm_name}: {e}")
@@ -118,26 +100,28 @@ def main(N, initial_version):
         'patch_size': ['48 8'],
         'img_height': ['48'],
         'img_width': ['192'],
-        'batch_size': ['1536'],
+        'batch_size': ['1024'],
         'epochs': ['400'],
         'embed_dim': ['624'],
         'num_heads': ['12'],
-        'num_encoder_layers': ['12', '8'],
-        'num_decoder_layers': ['4', '5'],
+        'num_encoder_layers': ['8'],
+        'num_decoder_layers': ['6'],
         'max_sequence_length': ['7'],
-        'dropout': ['0.15'],
-        'emb_dropout': ['0.15'],
+        'dropout': ['0.25'],
+        'emb_dropout': ['0.25'],
         'norm_image': ['1'],
         'overlap': ['0'],
-        'start_lr': [str(1e-3)],
-        'plateau_thr': ['3'],
-        'wandb': ['']
+        'start_lr': [str(1e-3), str(5e-3)],
+        'plateau_thr': ['1200'],
+        'aug_strength': ['2.25'],
+        'wandb': [''],
+        'schedulefree': [''],
     }
 
     # Generate all combinations of arguments
     keys, values = zip(*configurations.items())
     combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
-    
+
     # Prepare command queue
     command_queue = queue.Queue()
     for idx, combo in enumerate(combinations):
