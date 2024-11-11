@@ -9,6 +9,7 @@ omegaconf
 pandas
 Pillow
 scipy
+schedulefree
 timm>=0.9
 wandb
 torchinfo
