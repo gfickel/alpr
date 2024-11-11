@@ -14,7 +14,7 @@ This is a simple, efficient and aiming to be state-of-the art license plate reco
 
 It is composed of two networks:
 
-1. Detection: heavily inspired on [SCRFD](https://arxiv.org/abs/2105.04714). Changed the backbone and neck, however the main ideas and losses remains. It is finding both the plate bounding box using the Integral regression from [TinaFace](https://arxiv.org/abs/2011.13183) that is just a tidy slower but more accurate, and the plate corners with a simple regression head.
+1. Detection: heavily inspired on [SCRFD](https://arxiv.org/abs/2105.04714). Changed the backbone and neck, however the main ideas remains. It is finding both the plate bounding box using the Integral regression from [TinaFace](https://arxiv.org/abs/2011.13183) that is just a tidy slower but more accurate, and the plate corners with a simple regression head.
 2. OCR: given a licence plate detection, I'm using [MaskOCR](https://arxiv.org/abs/2206.00311) to read it. It is one of the state of the art OCRs with a really good CPU runtime also.
 
 
@@ -57,8 +57,40 @@ python -m pip install -r requirements.txt
 
 ## Train
 
-TODO
+### Prepare dataset
 
+Run the following script:
+
+```sh
+python scripts/create_dataset.py --dataset_path /path/to/CCPD2019/
+```
+
+Inside the dataset path you should have many folders, such as ccpd_base, ccpd_weather, etc. This script will go to everyone of those folders, read them, and write an alpr_dataset.csv inside each one of them, containing the parsed annotation. Then you can pass those folders to the train the detector.
+
+For the
+
+
+### Train Code
+
+
+```sh
+python train.py --batch_size 1024 --dataset_path /path/to/CCPD2019/ccpd_base/
+```
+
+This will train a Detection model and save it to 'model_bin/' folder.
+
+
+And finally, the OCR network:
+
+```sh
+python maskocr_train.py --batch_size 1024 --img_height 48 --img_width 192 --start_lr 0.001 --aug_strength 2.0 --plateau_thr 2000
+```
+
+This will train the MaskOCR network for plate OCR and save it on 'model_bin/' folder. Notice that there are several options that you can tweek, and you can read more about them with the following:
+
+```sh
+python maskocr_train.py --help
+```
 
 ## Test
 
@@ -66,7 +98,7 @@ TODO
 
 ## Benchmarks
 
-TODO
+MaskOCR: 93% accuracy on ccpd_challenge, the hardest set and usually reserved for testing. Notice that there are some annotation problems, mostly invalid plates and humanly unreadable plates. We can argue that "unreadable" is a little bit subjective, and that the model should be able to outperform humans. However this makes it quite challenging to detect if the mistake came from the network or the annotation.
 
 
 ## Alternative ideas that did not pan out
