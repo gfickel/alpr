@@ -19,56 +19,6 @@ from maskocr import *
 plt.ion()
 
 
-def train_model(model, train_function, train_dataloader, val_dataloader, device, vocab, 
-                model_name=None, num_epochs=40, use_wandb=False, config=None, **train_kwargs):
-    """
-    Manages the model: loads if exists, trains and saves at each epoch.
-    Returns the loaded or trained model
-    """
-    if model_name is None:
-        model_name = train_function.__name__
-
-    final_model_path = os.path.join('model_bin', f"{model_name}_final.pth")
-    temp_model_path = os.path.join('model_bin', f"{model_name}_temp.pth")
-    
-    start_epoch = 0
-    if os.path.exists(temp_model_path):
-        print(f"Loading existing temporary model from {temp_model_path}")
-        checkpoint = torch.load(temp_model_path)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        print(f"Resuming from epoch {start_epoch}")
-    elif os.path.exists(final_model_path):
-        print(f"Loading existing final model from {final_model_path}")
-        checkpoint = torch.load(final_model_path)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        return
-    else:
-        print(f"No existing model found. Training new model using {model_name} for {num_epochs} epochs.")
-
-    # Initialize wandb
-    if use_wandb:
-        wandb.init(project="alpr_ocr", config=config, group=train_kwargs['version'], name=model_name)
-        wandb.watch(model)
-
-    # Train the model
-    train_function(model, train_dataloader, val_dataloader, device, vocab, 
-                    num_epochs=num_epochs, start_epoch=start_epoch, 
-                    temp_model_path=temp_model_path, use_wandb=use_wandb, **train_kwargs)
-
-    # Save the final model
-    print(f"Saving final trained model to {final_model_path}")
-    torch.save({'model_state_dict': model.state_dict()}, final_model_path)
-
-    # Remove temporary checkpoint
-    if os.path.exists(temp_model_path):
-        os.remove(temp_model_path)
-
-    if use_wandb:
-        wandb.finish()
-
-    return model
-
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Parse arguments for image processing and model configuration.")

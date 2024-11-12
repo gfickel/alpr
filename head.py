@@ -155,6 +155,13 @@ class GFLHead(nn.Module):
             self.feat_channels, 4 * (self.reg_max + 1), 3, padding=1)
         self.scales = nn.ModuleList(
             [Scale(1.0) for _ in self.prior_generator.strides])
+        
+        # Initialize all conv layers weights to zero
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.zeros_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
 
     def _conv_module(self, in_channels: int,

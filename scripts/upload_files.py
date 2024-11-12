@@ -60,8 +60,8 @@ if __name__ == '__main__':
     service = get_drive_service()
     
     # Get or create the 'ocr_training' folder
-    ocr_folder_id = get_or_create_folder(service, 'ocr_training')
-    # ocr_folder_id = get_or_create_folder(service, 'alpr_datasets')
+    # ocr_folder_id = get_or_create_folder(service, 'ocr_training')
+    ocr_folder_id = get_or_create_folder(service, 'alpr_datasets')
     
     for file_path in files_to_upload:
         if not os.path.isfile(file_path):

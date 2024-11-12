@@ -3,6 +3,7 @@ from collections import deque
 import os
 import argparse
 
+import dlib
 import torch
 import time
 import numpy as np
@@ -19,6 +20,165 @@ from dataloader import ALPRDataset
 
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+def train_detection(model, train_dataloader, val_dataloader, device, vocab=None, 
+                   num_epochs=50, start_epoch=0, temp_model_path=None,
+                   use_wandb=False, start_lr=1e-3, min_lr=1e-5, version=None, compile=False, **kwargs):
+    """
+    Main training function for detector model
+    """
+    if compile:
+        model = torch.compile(model)
+    
+    optimizer = torch.optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.01)
+    
+    # Load optimizer state if resuming training
+    if temp_model_path and os.path.exists(temp_model_path):
+        checkpoint = torch.load(temp_model_path)
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        curr_lr = checkpoint['learning_rate']
+        loss_history = checkpoint.get('loss_history', [])
+    else:
+        curr_lr = start_lr
+        loss_history = []
+
+    LOSS_LEN = 400
+    loss_deque = deque(maxlen=LOSS_LEN)
+    
+    for epoch in range(start_epoch, num_epochs):
+        # Training phase
+        model.train()
+        train_losses = []
+        
+        for i, data in enumerate(train_dataloader):
+            sum_loss = 0
+            begin = time.time()
+            log = {}
+            
+            images, gt_bboxes, gt_labels, gt_kps, _ = data
+            batch_size = images.size(0)
+            
+            gt_instances_sn = []
+            for j in range(batch_size):
+                gt_instances = {
+                    'bboxes': gt_bboxes[j].to(device),
+                    'labels': gt_labels[j].to(device),
+                    'kps': gt_kps[j].to(device)
+                }
+                gt_instances_sn.append(SimpleNamespace(**gt_instances))
+
+            img_metas = [{
+                'pad_shape': (224, 224, 3),
+                'img_shape': (224, 224, 3),
+            }]*batch_size
+
+            optimizer.zero_grad()
+
+            cls_quality_score, bbox_pred, kps_pred = model(images.to(device))
+            
+            loss = model.head.loss_by_feat(
+                cls_quality_score,
+                bbox_pred,
+                kps_pred,
+                gt_instances_sn,
+                img_metas)
+
+            for loss_name, loss_val in loss.items():
+                for loss_idx, lv in enumerate(loss_val):
+                    lv.backward(retain_graph=True)
+                    log[f'{loss_name}-{loss_idx}'] = float(lv.detach())
+                    mult = 1 if 'kps' not in loss_name else 1/100
+                    sum_loss += log[f'{loss_name}-{loss_idx}']*mult
+
+            train_losses.append(sum_loss)
+            loss_history.append(sum_loss)
+            optimizer.step()
+
+            if is_in_plateau(loss_history, threshold=500):
+                # Reduce learning rate
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= 0.5
+                    curr_lr = param_group['lr']
+                loss_history = []
+                print(f"{version} - Learning rate reduced to {curr_lr}")
+
+            if use_wandb:
+                loss_deque.append(sum_loss)
+                log['iter_time'] = time.time()-begin
+                log['epoch'] = epoch+i/len(train_dataloader)
+                log['learning_rate'] = curr_lr
+                wandb.log(log)
+                if len(loss_deque) == LOSS_LEN:
+                    wandb.log({'train_loss': np.mean(sum_loss)})
+
+        # Validation phase
+        model.eval()
+        val_losses = []
+        with torch.no_grad():
+            for data in val_dataloader:
+                images, gt_bboxes, gt_labels, gt_kps, _ = data
+                batch_size = images.size(0)
+                
+                gt_instances_sn = []
+                for j in range(batch_size):
+                    gt_instances = {
+                        'bboxes': gt_bboxes[j].to(device),
+                        'labels': gt_labels[j].to(device),
+                        'kps': gt_kps[j].to(device)
+                    }
+                    gt_instances_sn.append(SimpleNamespace(**gt_instances))
+
+                img_metas = [{
+                    'pad_shape': (224, 224, 3),
+                    'img_shape': (224, 224, 3),
+                }]*batch_size
+
+                cls_quality_score, bbox_pred, kps_pred = model(images.to(device))
+                
+                loss = model.head.loss_by_feat(
+                    cls_quality_score,
+                    bbox_pred,
+                    kps_pred,
+                    gt_instances_sn,
+                    img_metas)
+                
+                sum_loss = 0
+                for loss_name, loss_val in loss.items():
+                    for loss_idx, lv in enumerate(loss_val):
+                        mult = 1 if 'kps' not in loss_name else 1/100
+                        sum_loss += float(lv.detach())*mult
+                
+                val_losses.append(sum_loss)
+
+        avg_val_loss = np.mean(val_losses)
+        if use_wandb:
+            wandb.log({
+                'val_loss': avg_val_loss,
+                'epoch': epoch
+            })
+        
+        # Save checkpoint
+        if temp_model_path:
+            checkpoint = {
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'epoch': epoch,
+                'learning_rate': curr_lr,
+                'loss_history': loss_history
+            }
+            torch.save(checkpoint, temp_model_path)
+        
+        print(f'Epoch {epoch}: Train Loss = {np.mean(train_losses):.4f}, Val Loss = {avg_val_loss:.4f}')
+        
+        if curr_lr < min_lr:
+            break
+
+
+def is_in_plateau(vec, threshold):
+    dlib_simple = dlib.count_steps_without_decrease(vec)
+    dlib_robust = dlib.count_steps_without_decrease_robust(vec)
+    return dlib_simple > threshold and dlib_robust > threshold
 
 def dummy_dataloader(dataset_size: int, batch_size: int):
     img_meta = {
@@ -45,8 +205,7 @@ def dummy_dataloader(dataset_size: int, batch_size: int):
             gt_instances = {
                 'bboxes': gt_bboxes.to(DEVICE),
                 'labels': gt_labels.to(DEVICE),
-                'kps': gt_kps.to(DEVICE),
-                'ocrs': torch.LongTensor([1,3,2,3,2]).to(DEVICE)
+                'kps': gt_kps.to(DEVICE)
             }
             gt_instances_sn.append(SimpleNamespace(**gt_instances))
         yield images, [img_meta]*batch_size, gt_instances_sn
@@ -55,8 +214,11 @@ def dummy_dataloader(dataset_size: int, batch_size: int):
 def get_args():
     parser = argparse.ArgumentParser(description='Trains the network')
     parser.add_argument('--load', required=False, help='Path to checkpoint model')
+    parser.add_argument('--version', type=str, required=True, help='Training Version')
     parser.add_argument('--dataset_path', required=True, help='Dataset path. Ex: /path/ccpd2019/ccpd_base/')
     parser.add_argument('--batch_size', default=16, type=int, help='Batch size')
+    parser.add_argument('--start_lr', type=float, default=1e-3, help='Starting learning rate')
+    parser.add_argument('--min_lr', type=float, default=1e-5, help='Starting learning rate')
     parser.add_argument('--num_workers', default=8, type=int, help='Dataloader workers')
     parser.add_argument('--start_epoch', default=0, type=int, help='Epoch to start training')
     parser.add_argument('--end_epoch', default=50, type=int, help='Epoch to end training')
@@ -76,14 +238,7 @@ if __name__ == '__main__':
             },
     }
 
-    model = Detector('mobilenetv3_large_100', 1, test_cfg, use_kps=True, use_ocr=True)
-    for param in model.backbone.parameters():
-        param.requires_grad = False
-    for param in model.head.parameters():
-        param.requires_grad = False
-    for param in model.fpn.parameters():
-        param.requires_grad = False
-
+    model = Detector('mobilenetv4_hybrid_medium.e500_r224_in1k', 1, test_cfg, use_kps=True)
     if args.load:
         state_dict = torch.load(args.load, map_location=torch.device(DEVICE))
         # state_dict = {k[len('_orig_mod.'):] if k.startswith('_orig_mod.') else k: v for k, v in state_dict.items()}
@@ -94,34 +249,8 @@ if __name__ == '__main__':
     if args.compile:
         model = torch.compile(model)
 
-    # Build param_group where each group consists of a single parameter.
-    # `param_group_names` is created so we can keep track of which param_group
-    # corresponds to which parameter.
-    param_groups = []
-    param_group_names = []
-    param_name_idx = 1 if args.compile else 0
-    for name, parameter in model.named_parameters():
-        param_group_names.append(name)
-        name = name.split('.')[param_name_idx]
-        param_groups.append({'params': [parameter], 'lr': learning_rates[name]})
-    
-    optimizer = torch.optim.AdamW(param_groups, lr=0.001, weight_decay=0.01)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.75, patience=400, verbose=True)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.start_lr, weight_decay=0.01)
     batch_size = args.batch_size if not args.debug else 4
-
-    # start a new wandb run to track this script
-    if args.wandb:
-        wandb.init(
-            project="detector-kps-ocr-v3",
-            config={
-                'learning_rate': 0.001,
-                'architecture': 'mobilenetV3-large',
-                'batch_size': args.batch_size,
-                'compile': args.compile,
-                'num_workers': args.num_workers,
-            }
-        )
 
     model_data_config = resolve_model_data_config(model.backbone)
     data_transform = timm.data.create_transform(
@@ -134,74 +263,43 @@ if __name__ == '__main__':
     )
 
     if not args.debug:
-        dataset = ALPRDataset(
-            os.path.join(args.dataset_path, 'alpr_annotation.csv'),
-            args.dataset_path,
-            data_transform)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=args.num_workers, drop_last=True)
+        train_dataset = ALPRDataset(
+            os.path.join(args.dataset_path, 'ccpd_base', 'alpr_annotation.csv'),
+            os.path.join(args.dataset_path, 'ccpd_base'),
+            data_transform,
+            detection=True)
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
+                                      pin_memory=True, num_workers=args.num_workers, drop_last=True)
+        
+        val_dataset = ALPRDataset(
+            os.path.join(args.dataset_path, 'ccpd_weather', 'alpr_annotation.csv'),
+            os.path.join(args.dataset_path, 'ccpd_weather'),
+            data_transform,
+            detection=True)
+        val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True,
+                                      pin_memory=True, num_workers=args.num_workers, drop_last=True)
     else:
-        dataloader = dummy_dataloader
+        train_dataloader = dummy_dataloader
+        val_dataloader = dummy_dataloader
 
     os.makedirs('model_bin', exist_ok=True)
-    torch.save(model.state_dict(), f'model_bin/alpr_v17_{0}.pth')
 
-    LOSS_LEN = 400
-    with torch.autograd.set_detect_anomaly(False):
-        for epoch in range(args.start_epoch,args.end_epoch+1,1):
-            loss_deque = deque(maxlen=LOSS_LEN)
-            for i, data in enumerate(dataloader):
-                sum_loss = 0
-                begin = time.time()
-                log = {}
-                images, gt_bboxes, gt_labels, gt_kps, gt_ocrs = data
-                gt_instances_sn = []
-                for j in range(batch_size):
-                    gt_instances = {
-                        'bboxes': gt_bboxes[j].to(DEVICE),
-                        'labels': gt_labels[j].to(DEVICE),
-                        'kps': gt_kps[j].to(DEVICE),
-                        'ocrs': gt_ocrs[j].to(DEVICE),
-                    }
-                    gt_instances_sn.append(SimpleNamespace(**gt_instances))
 
-                img_metas = [{
-                    'pad_shape': model_data_config['input_size'][::-1],
-                    'img_shape': model_data_config['input_size'][::-1],
-                }]*batch_size
-
-                optimizer.zero_grad()
-
-                cls_quality_score, bbox_pred, kps_pred = model(images.to(DEVICE), test_cfg=test_cfg)
-                
-                loss = model.head.loss_by_feat(
-                    cls_quality_score,
-                    bbox_pred,
-                    kps_pred,
-                    gt_instances_sn,
-                    img_metas)
-
-                for loss_name, loss_val in loss.items():
-                    for loss_idx, lv in enumerate(loss_val):
-                        lv.backward(retain_graph=True)
-                        log[f'{loss_name}-{loss_idx}'] = float(lv.detach())
-                        mult = 1 if 'kps' not in loss_name else 1/100
-                        sum_loss += log[f'{loss_name}-{loss_idx}']*mult
-
-                loss_deque.append(sum_loss)
-                # Extract learning rates and add to log
-                for name, param_group in zip(param_group_names, optimizer.param_groups):
-                    group_name = name.split('.')[param_name_idx]  # Adjust the splitting logic based on your param_group_names
-                    log[f'lr_{group_name}'] = param_group['lr']
-
-                log['iter_time'] = time.time()-begin
-                log['epoch'] = epoch+i/len(dataloader)
-                if args.wandb: wandb.log(log)
-
-                optimizer.step()
-
-                if len(loss_deque) == LOSS_LEN:
-                    scheduler.step(np.mean(sum_loss))
-                    wandb.log({'loss': np.mean(sum_loss)})
-
-            torch.save(model.state_dict(), f'model_bin/alpr_v17_{epoch+1}.pth')
-            
+    # Train the model using the external train_model function
+    train_model(
+        project='alpr_detection_v4'
+        model=model,
+        train_function=train_detection,
+        train_dataloader=train_dataloader,
+        val_dataloader=val_dataloader,
+        device=DEVICE,
+        vocab=None,  # Not needed for detection but required by function signature
+        model_name=f'detection_{args.version}',
+        num_epochs=args.end_epoch,
+        use_wandb=args.wandb,
+        config=args,
+        version=args.version,
+        start_lr=args.start_lr,
+        min_lr=args.min_lr,
+        compile=args.compile
+    )

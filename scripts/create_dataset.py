@@ -3,19 +3,16 @@ import argparse
 import os
 import csv
 
-from PIL import Image
-
 
 def get_args():
     parser = argparse.ArgumentParser(description='Converts ALPR datasets to test/train')
     parser.add_argument('--dataset_path', help='Dataset path')
-    parser.add_argument('--dataset_name', choices=['ccpd2019'])
     return parser.parse_args()
 
 
-def convert_ccpd2019(args):
+def convert_ccpd2019(dataset_path):
     for category in ['ccpd_base', 'ccpd_weather', 'ccpd_blur', 'ccpd_challenge', 'ccpd_db', 'ccpd_fn', 'ccpd_np', 'ccpd_tilt', 'ccpd_weather']:
-        path = os.path.join(args.dataset_path, category)
+        path = os.path.join(dataset_path, category)
         max_letter = 0
 
         with open(os.path.join(path, 'alpr_annotation.csv'), 'w', newline='') as fid:
@@ -54,5 +51,4 @@ def convert_ccpd2019(args):
 
 if __name__ == '__main__':
     args = get_args()
-    if args.dataset_name == 'ccpd2019':
-        convert_ccpd2019(args)
+    convert_ccpd2019(args.dataset_path)

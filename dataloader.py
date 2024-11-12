@@ -16,7 +16,7 @@ from utils import *
 
 
 class ALPRDataset(Dataset):
-    def __init__(self, annotations_file, img_dir, transform, return_image_path=False, resize=None, grayscale=False):
+    def __init__(self, annotations_file, img_dir, transform, detection=False, return_image_path=False, resize=None, grayscale=False):
         self.img_labels = pd.read_csv(annotations_file)
         self.img_dir = img_dir
         self.transform = transform
@@ -24,6 +24,7 @@ class ALPRDataset(Dataset):
         self.to_tensor = transforms.ToTensor()
         self.resize = resize
         self.grayscale = grayscale
+        self.detection = detection
 
     def __len__(self):
         return len(self.img_labels)
@@ -77,11 +78,15 @@ class ALPRDataset(Dataset):
             # image = self.to_tensor(image)
         
         if self.return_image_path:
-            # return image, img_path, gt_bboxes, gt_labels, gt_kps, gt_ocrs
-            return image, img_path, gt_ocrs
+            if self.detection:
+                return image, img_path, gt_bboxes, gt_labels, gt_kps, gt_ocrs
+            else:
+                return image, img_path, gt_ocrs
         else:
-            # return image, gt_bboxes, gt_labels, gt_kps, gt_ocrs
-            return image, gt_ocrs
+            if self.detection:
+                return image, gt_bboxes, gt_labels, gt_kps, gt_ocrs
+            else:
+                return image, gt_ocrs
 
 
 class OCRSafeAugment:

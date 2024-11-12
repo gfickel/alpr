@@ -94,9 +94,9 @@ def vm_worker(vm_name, command_queue):
             # No more commands in the queue
             break
 
-def main(N, initial_version):
+def main(N, initial_version, network):
     # Define the argument combinations you want to try
-    configurations = {
+    configurations_maskocr = {
         'patch_size': ['48 8'],
         'img_height': ['48'],
         'img_width': ['192'],
@@ -118,6 +118,25 @@ def main(N, initial_version):
         'schedulefree': [''],
     }
 
+    configurations_detection = {
+        "batch_size": [str(2048)],
+        "num_workers": [str(8)],
+        "start_epoch": [str(0)],
+        "end_epoch": [str(50)],
+        "min_lr": [str(1e-5)],
+        "start_lr": [str(1e-3), str(5e-3)],
+        "wandb": [''],
+    }
+
+    if network == 'detection':
+        configurations = configurations_detection
+        train_script = 'train.py'
+    elif network == 'maskocr':
+        configurations = configurations_maskocr
+        train_script = 'maskocr_train.py'
+    else:
+        print(f'Error! Invalid network to train: {network}')
+        exit(1)
     # Generate all combinations of arguments
     keys, values = zip(*configurations.items())
     combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
@@ -126,7 +145,7 @@ def main(N, initial_version):
     command_queue = queue.Queue()
     for idx, combo in enumerate(combinations):
         args = ' '.join([f'--{key} {value}' for key, value in combo.items()])
-        command = f"/opt/conda/bin/python maskocr_train.py {args} --version v{idx+1+initial_version}"
+        command = f"/opt/conda/bin/python {train_script} {args} --version v{idx+1+initial_version}"
         command_queue.put(command)
 
     # Create and start a thread for each VM
@@ -148,5 +167,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run PyTorch training on Vast.ai VMs")
     parser.add_argument("--num_vms", type=int, help="Number of VMs")
     parser.add_argument("--initial_version", type=int, default=0, help="Version start")
+    parser.add_argument("--network", type=str, choices=['detection', 'maskocr'], help="Network to train")
     args = parser.parse_args()
     main(args.num_vms, args.initial_version)

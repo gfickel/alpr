@@ -54,16 +54,17 @@ add_host_keys() {
     local port=$(echo "$ssh_config" | grep "Port" | awk '{print $2}')
     if [[ -n $hostname && -n $port ]]; then
         echo "Adding host key for $vm_name ($hostname:$port)"
-        ssh-keyscan -H -p $port $hostname >> ~/.ssh/known_hosts 2>/dev/null
+        ssh-keyscan -T 10 -H -p $port $hostname >> ~/.ssh/known_hosts 2>/dev/null
     else
         echo "Couldn't find hostname or port for $vm_name in ~/.ssh/config"
     fi
 }
 
 # Check if the correct number of arguments is provided
-if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
-    echo "Usage: $0 <number_of_vms> <gpu_name> [initial_version]"
-    echo "Example: $0 2 RTX_3060 5"
+if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
+    echo "Usage: $0 <number_of_vms> <gpu_name> <network_type> [initial_version]"
+    echo "Example: $0 2 RTX_3060 detection 5"
+    echo "network_type can be 'detection' or 'maskocr'"
     echo "If initial_version is not provided, it defaults to 0"
     exit 1
 fi
@@ -71,7 +72,14 @@ fi
 # Assign command-line arguments to variables
 requested_vms=$1
 gpu_name=$2
-initial_version=${3:-0}  # Use the third argument if provided, otherwise default to 0
+network_type=$3
+initial_version=${4:-0}  # Use the fourth argument if provided, otherwise default to 0
+
+# Validate network_type
+if [ "$network_type" != "detection" ] && [ "$network_type" != "maskocr" ]; then
+    echo "Error: network_type must be either 'detection' or 'maskocr'"
+    exit 1
+fi
 
 # Create the initial VM
 echo "Creating initial VM..."
@@ -118,7 +126,7 @@ echo "Generating start_vms_train.sh script..."
 cat << EOF > scripts/start_vms_train.sh
 #!/bin/bash
 
-scripts/cloud_setup.sh $requested_vms $gpu_name $initial_version"
+scripts/cloud_setup.sh $requested_vms $gpu_name $network_type $initial_version
 EOF
 
 # Copy the Vast.ai API key
@@ -136,9 +144,9 @@ echo "To check on the progress later, you can SSH into the VM using:"
 echo "ssh cuda-dev-0"
 
 chmod +x scripts/start_vms_train.sh
-echo "Generated start_vms_train.sh with command: cloud_setup.sh $requested_vms $gpu_name $initial_version"
+echo "Generated start_vms_train.sh with command: cloud_setup.sh $requested_vms $gpu_name $network_type $initial_version"
 
 ssh cuda-dev-0 "sudo sh -c 'echo \"PATH=\\\"/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\\\"\" > /etc/environment'"
-ssh cuda-dev-0 "bash -l -c 'cd /workspace/alpr && bash scripts/cloud_setup.sh $requested_vms $gpu_name $initial_version' > /workspace/alpr/scripts/cloud_setup.log 2>&1 &"
+ssh cuda-dev-0 "bash -l -c 'cd /workspace/alpr && bash scripts/cloud_setup.sh $requested_vms $gpu_name $network_type $initial_version' > /workspace/alpr/scripts/cloud_setup.log 2>&1 &"
 sleep 3
 ssh cuda-dev-0 "tail -f /workspace/alpr/scripts/cloud_setup.log"
