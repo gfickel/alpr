@@ -23,6 +23,7 @@ plt.ion()
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Parse arguments for image processing and model configuration.")
     
+    parser.add_argument('--dataset_path', type=str, default='../', help='Base directory containing the datasets')
     parser.add_argument('--img_height', type=int, default=32, help='Height of the input image')
     parser.add_argument('--img_width', type=int, default=128, help='Width of the input image')
     parser.add_argument('--patch_size', type=int, nargs=2, default=[32, 8], help='Patch size for image processing (height, width)')
@@ -76,7 +77,6 @@ def main():
     ])
     train_data_transform = create_ocr_transform(augment_strength=cfg.aug_strength)
 
-    local_path = '.' if torch.cuda.is_available() else 'alpr_datasets'
     if cfg.img_height == 32:
         train_ds = 'output_images_plates_gt'
         val_ds = 'plates_ccpd_weather'
@@ -85,14 +85,14 @@ def main():
         val_ds = 'plates_ccpd_weather_48'
 
     train_dataset = ALPRDataset(
-        f'../{local_path}/{train_ds}/alpr_annotation.csv',
-        f'../{local_path}/{train_ds}/', #None)
+        os.path.join(cfg.dataset_path, train_ds, 'alpr_annotation.csv'),
+        os.path.join(cfg.dataset_path, train_ds),
         train_data_transform)
     train_dataloader = DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, pin_memory=True, num_workers=4, drop_last=True, prefetch_factor=32)
 
     val_dataset = ALPRDataset(
-        f'../{local_path}/{val_ds}/alpr_annotation.csv',
-        f'../{local_path}/{val_ds}/', #None)
+        os.path.join(cfg.dataset_path, val_ds, 'alpr_annotation.csv'),
+        os.path.join(cfg.dataset_path, val_ds),
         val_data_transform)
     val_dataloader = DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=True, pin_memory=True, num_workers=2, drop_last=False)
 
