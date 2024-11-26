@@ -73,7 +73,7 @@ class ALPRViewer:
                 for kp in kps:
                     x, y = int(kp[0]), int(kp[1])  # Convert to integers for cv2
                     cv2.circle(img_array, (x, y), 5, (0, 0, 255), -1)  # Red dots, radius 5, filled
-                cv2.putText(img_array, text, (l, t-10), 
+                cv2.putText(img_array, text[1:], (l, t-10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
         # Create OpenGL texture
@@ -197,7 +197,7 @@ class ALPRViewer:
                 imgui.push_id(str(i))
                 imgui.begin_child(f"license_{i}", height=60, border=True)
                 imgui.text(f"Plate {i}")
-                imgui.text_wrapped(text)
+                imgui.text_wrapped(text[1:])
                 imgui.end_child()
                 imgui.spacing()
                 imgui.pop_id()
