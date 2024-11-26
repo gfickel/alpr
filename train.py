@@ -279,7 +279,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Trains the network')
     parser.add_argument('--load', required=False, help='Path to checkpoint model')
     parser.add_argument('--version', type=str, required=True, help='Training Version')
-    parser.add_argument('--dataset_path', required=True, help='Dataset path. Ex: /path/ccpd2019/ccpd_base/')
+    parser.add_argument('--dataset_path', required=True, help='Dataset path. Ex: /path/ccpd2019/')
     parser.add_argument('--batch_size', default=16, type=int, help='Batch size')
     parser.add_argument('--start_lr', type=float, default=1e-3, help='Starting learning rate')
     parser.add_argument('--min_lr', type=float, default=1e-5, help='Starting learning rate')
