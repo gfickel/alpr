@@ -111,7 +111,7 @@ class VastAIManager:
                     vm_commands[vm_idx] = command
                     vm_idx += 1
             else:
-                command = f"/opt/conda/bin/python {network_config['script']} {args} --version {version}"
+                command = f"/opt/conda/bin/python {network_config['script']} {args} --version {version} --dataset_path ../"
                 vm_commands[vm_idx] = command
                 vm_idx += 1
         
