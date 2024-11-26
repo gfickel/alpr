@@ -22,6 +22,8 @@ class ALPRViewer:
         self.current_image_idx = 0
         self.webcam_mode = False
         self.cap = None
+        self.default_width = 1280
+        self.default_height = 720
 
     
     def init_gui(self):
@@ -130,8 +132,31 @@ class ALPRViewer:
         if self.current_image is None:
             return
 
-        imgui.begin("ALPR Viewer")
-
+        # Get current window size
+        window_width, window_height = glfw.get_window_size(self.window)
+        
+        # Set ImGui window to match GLFW window size
+        imgui.set_next_window_position(0, 0)
+        imgui.set_next_window_size(window_width, window_height)
+        
+        # Window flags for fixed position but allowing resize through the OS window
+        window_flags = (
+            imgui.WINDOW_NO_MOVE | 
+            imgui.WINDOW_NO_COLLAPSE | 
+            imgui.WINDOW_NO_TITLE_BAR |
+            imgui.WINDOW_NO_RESIZE
+        )
+        
+        imgui.begin("ALPR Viewer", flags=window_flags)
+        
+        # Calculate layout
+        panel_width = 200  # Width of the right panel
+        padding = 10
+        available_width = imgui.get_window_width() - panel_width - (3 * padding)
+        
+        # Begin main content area (left side)
+        imgui.begin_child("left_panel", width=available_width, height=0, border=False)
+        
         # Navigation controls (only show in image folder mode)
         if not self.webcam_mode:
             if imgui.button("Previous") and self.current_image_idx > 0:
@@ -147,27 +172,46 @@ class ALPRViewer:
         else:
             imgui.text("Webcam Mode")
 
-        # Display results
+        # Display image
+        if self.current_image:
+            image_width, image_height = self.current_image.size
+            aspect_ratio = image_width / image_height
+            display_width = min(available_width - padding, image_width)
+            display_height = display_width / aspect_ratio
+
+            imgui.image(self.texture_id, display_width, display_height)
+        
+        imgui.end_child()  # End left panel
+        
+        # Right panel for license plate information
+        imgui.same_line(spacing=padding)
+        imgui.begin_child("right_panel", width=panel_width, height=0, border=True)
+        
+        # Display results in right panel
         if self.current_results:
             bboxes, texts, kps = self.current_results
-            imgui.text(f"Detected licenses: {len(texts)}")
-            for text in texts:
-                imgui.text(f"  {text}")
-
-        # Display image
-        available_width = imgui.get_window_width() - 30
-        image_width, image_height = self.current_image.size
-        aspect_ratio = image_width / image_height
-        display_width = min(available_width, image_width)
-        display_height = display_width / aspect_ratio
-
-        imgui.image(self.texture_id, display_width, display_height)
+            imgui.text("Detected Licenses")
+            imgui.separator()
+            
+            for i, text in enumerate(texts, 1):
+                imgui.push_id(str(i))
+                imgui.begin_child(f"license_{i}", height=60, border=True)
+                imgui.text(f"Plate {i}")
+                imgui.text_wrapped(text)
+                imgui.end_child()
+                imgui.spacing()
+                imgui.pop_id()
+        else:
+            imgui.text_wrapped("No license plates detected")
+            
+        imgui.end_child()  # End right panel
         
         imgui.end()
 
         # In webcam mode, continuously update the image
         if self.webcam_mode:
             self.load_current_image()
+
 
     def run(self):
         """Main application loop."""
