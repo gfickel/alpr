@@ -2,6 +2,8 @@
 
 A lightweight, efficient, and modern approach to License Plate Detection and Recognition, designed with state-of-the-art performance in mind.
 
+[images/sample_1.jpg]
+
 
 ## Goals
 
