@@ -1,12 +1,12 @@
 ### Automatic License Plate Recognition (ALPR)
 
-This is a simple, efficient and aiming to be state-of-the art license plate recognition, i.e., detect and read license plates.
+A lightweight, efficient, and modern approach to License Plate Detection and Recognition, designed with state-of-the-art performance in mind.
 
 
 ## Goals
 
-1. Minimum requirements
-2. Easy to change to the newest Pytorch
+1. Minimal dependencies and requirements
+2. Compatible with latest PyTorch versions
 3. Should run *fast* on CPU
 4. Easy to train
 
@@ -14,11 +14,11 @@ This is a simple, efficient and aiming to be state-of-the art license plate reco
 
 It is composed of two networks:
 
-1. Detection: heavily inspired on [SCRFD](https://arxiv.org/abs/2105.04714). Changed the backbone and neck, however the main ideas remains. It is finding both the plate bounding box using the Integral regression from [TinaFace](https://arxiv.org/abs/2011.13183) that is just a tidy slower but more accurate, and the plate corners with a simple regression head.
-2. OCR: given a licence plate detection, I'm using [MaskOCR](https://arxiv.org/abs/2206.00311) to read it. It is one of the state of the art OCRs with a really good CPU runtime also.
+1. Detection: heavily inspired on [SCRFD](https://arxiv.org/abs/2105.04714). Changed the backbone and neck, however the main ideas remains. Uses Integral regression from [TinaFace](https://arxiv.org/abs/2011.13183) for plate bounding box. It is just a tidy slower but more accurate. The plate corners with a simple regression head proposed on SCRFD.
+2. OCR: Implements [MaskOCR](https://arxiv.org/abs/2206.00311) for plate text recognition. It is one of the state of the art OCRs with a really good CPU performance.
 
 
-Given an image, first we use the Detection network. Then, for every detected license plate, we crop it and send it to the OCR. Quite simple and somewhat fast.
+The pipeline processes images sequentially: first detecting license plates, then performing OCR on each detected plate region. Quite simple and somewhat fast.
 
 
 ## Datasets
@@ -59,7 +59,7 @@ python -m pip install -r requirements.txt
 
 ### Prepare dataset
 
-Run the following script:
+Run the following script to generate the annotation files:
 
 ```sh
 python scripts/create_dataset.py --dataset_path /path/to/CCPD2019/
@@ -109,9 +109,12 @@ python test.py --model_path model_bin/my_model_v5.pth --model_config configs/v5.
 
 You must pass the MaskOCR binary model and its respective configuration file.
 
+
+# Dev Notes
+
 ## Alternative ideas that did not pan out
 
-I tried to make a full end-to-end network, with both a detection, keypoint extractor and OCR within the same network. The OCR was a simple CRNN network, and I was reusing the same backbone and neck to extract the license plate features. Ideally this should reuse the same network weights (smaller end model), and act as a regularization, since the same backbone must do several different tasks at the same time.
+I tried to make a full end-to-end network, with both a detection, keypoint extractor and OCR within the same network. The OCR subnetwork was a CRNN, and I was reusing the same backbone and neck to extract the license plate features. Ideally this should reuse the same network weights (smaller end model), and act as a regularization, since the same backbone must do several different tasks at the same time.
 
 It did not work that well. Both because CRNN is far from the current state of the art and because it is a tricky network to train. In the past I used to do curricular learning (i.e. start with the easiest examples and then train with the harder ones), but it was a little trickier this time. And since I was not in the mood to change the detection framework to use ViT, I decided to let go of this idea.
 
