@@ -25,6 +25,10 @@ class ALPRDataset(Dataset):
         self.resize = resize
         self.grayscale = grayscale
         self.detection = detection
+        self.spatial_transform = ALPRSpatialTransform(
+            scale=(0.9, 3.5),
+            input_size=224
+        )
 
     def __len__(self):
         return len(self.img_labels)
@@ -37,7 +41,6 @@ class ALPRDataset(Dataset):
                 image = Image.open(img_path)
                 if self.grayscale:
                     image = image.convert('L')
-                # image = read_image(img_path)
             except:
                 image = None
             if image != None:
@@ -46,8 +49,8 @@ class ALPRDataset(Dataset):
                     
         W, H = image.size
         # H, W = image.shape[1:]
-        w_scale = 224/W
-        h_scale = 224/H
+        w_scale = 1#224/W
+        h_scale = 1#224/H
         l,t,r,b = self.img_labels.iloc[idx, 1:5].tolist()
         kps = self.img_labels.iloc[idx, 5:5+8].tolist()
         
@@ -70,6 +73,8 @@ class ALPRDataset(Dataset):
         gt_labels = torch.LongTensor([0])
 
         if self.transform:
+            if self.detection:
+                image, gt_bboxes, gt_kps = self.spatial_transform(image, gt_bboxes, gt_kps)
             image = self.transform(image)
         else:
             if self.resize:
@@ -88,6 +93,161 @@ class ALPRDataset(Dataset):
             else:
                 return image, gt_ocrs
 
+
+class ALPRSpatialTransform:
+    def __init__(self, 
+                 input_size=224, 
+                 scale=(0.8, 1.2),
+                 interpolation=InterpolationMode.BILINEAR):
+        self.input_size = input_size
+        self.scale = scale
+        self.interpolation = interpolation
+
+    def calculate_valid_scale_range(self, bbox_width, bbox_height, image_width, image_height):
+        """Calculate valid scale range that ensures bbox fits in final image"""
+        # Maximum scale is limited by how much we can zoom in while keeping the bbox visible
+        max_scale_w = image_width / bbox_width
+        max_scale_h = image_height / bbox_height
+        max_scale = min(max_scale_w, max_scale_h)
+        
+        # Minimum scale is determined by our scale parameter
+        min_scale = self.scale[0]
+        
+        # Clamp max_scale to our scale parameter
+        max_scale = min(max_scale, self.scale[1])
+        
+        return min_scale, max_scale
+
+    def calculate_valid_crop_range(self, bbox, kps, crop_size, new_w, new_h):
+        """Calculate valid crop range that ensures annotations remain in frame"""
+        # Get bounds of all annotations
+        points = []
+        if bbox is not None:
+            points.extend([(bbox[0].item(), bbox[1].item()),
+                         (bbox[2].item(), bbox[3].item())])
+        if kps is not None:
+            kps_reshape = kps.view(-1, 2)
+            points.extend([(x.item(), y.item()) for x, y in kps_reshape])
+            
+        min_x = min(p[0] for p in points)
+        min_y = min(p[1] for p in points)
+        max_x = max(p[0] for p in points)
+        max_y = max(p[1] for p in points)
+        
+        # Calculate valid crop ranges that keep all points in frame
+        valid_left = max(0, min(new_w - crop_size, max_x - crop_size))
+        valid_right = max(0, min(new_w - crop_size, min_x))
+        valid_top = max(0, min(new_h - crop_size, max_y - crop_size))
+        valid_bottom = max(0, min(new_h - crop_size, min_y))
+        
+        return valid_left, valid_right, valid_top, valid_bottom
+
+    def __call__(self, image, bboxes=None, kps=None):
+        # Get original size
+        w, h = image.size
+        
+        # Calculate initial resize to maintain aspect ratio
+        # if w >= h:
+        #     new_h = self.input_size
+        #     new_w = int(new_h * (w / h))
+        # else:
+        #     new_w = self.input_size
+        #     new_h = int(new_w * (h / w))
+        ratio = min(self.input_size/w, self.input_size/h)
+        new_w = int(w * ratio)
+        new_h = int(h * ratio)
+        
+        # First resize to maintain aspect ratio
+        image = TF.resize(image, (new_h, new_w), self.interpolation)
+        
+        # Calculate scaling ratio for coordinates
+        w_scale = new_w / w
+        h_scale = new_h / h
+        
+        # Update coordinates for initial resize
+        if bboxes is not None:
+            bboxes = bboxes.clone()
+            bboxes[:, [0,2]] *= w_scale
+            bboxes[:, [1,3]] *= h_scale
+            
+        if kps is not None:
+            kps = kps.clone()
+            kps[:, 0::2] *= w_scale
+            kps[:, 1::2] *= h_scale
+        
+        # Calculate valid scale range based on annotations
+        if bboxes is not None:
+            bbox = bboxes[0]  # Assuming single bbox
+            bbox_width = bbox[2] - bbox[0]
+            bbox_height = bbox[3] - bbox[1]
+            min_scale, max_scale = self.calculate_valid_scale_range(
+                bbox_width, bbox_height, new_w, new_h)
+        else:
+            min_scale, max_scale = self.scale
+            
+        # Random scale from valid range
+        scale = random.uniform(min_scale, max_scale)
+        
+        if scale > 1.0:  # Zoom in
+            # Calculate crop size
+            crop_size = int(self.input_size / scale)
+            
+            # Calculate valid crop range
+            valid_left, valid_right, valid_top, valid_bottom = self.calculate_valid_crop_range(
+                bboxes[0] if bboxes is not None else None,
+                kps,
+                crop_size,
+                new_w,
+                new_h
+            )
+            
+            # Random crop position within valid range
+            crop_x = int(random.uniform(valid_left, valid_right)) if valid_right > valid_left else valid_left
+            crop_y = int(random.uniform(valid_top, valid_bottom)) if valid_bottom > valid_top else valid_top
+            
+            # Apply crop
+            image = TF.crop(image, crop_y, crop_x, crop_size, crop_size)
+            
+            # Update coordinates for crop
+            if bboxes is not None:
+                bboxes[:, [0,2]] -= crop_x
+                bboxes[:, [1,3]] -= crop_y
+                
+            if kps is not None:
+                kps[:, 0::2] -= crop_x
+                kps[:, 1::2] -= crop_y
+                
+            # Final resize to desired input size
+            image = TF.resize(image, (self.input_size, self.input_size), self.interpolation)
+            
+            # Final scale adjustment for coordinates
+            final_scale = self.input_size / crop_size
+            if bboxes is not None:
+                bboxes *= final_scale
+            if kps is not None:
+                kps *= final_scale
+                
+        else:  # Zoom out or no zoom
+            pad_w = max(0, self.input_size - new_w)
+            pad_h = max(0, self.input_size - new_h)
+            padding = [pad_w//2, pad_h//2, pad_w-(pad_w//2), pad_h-(pad_h//2)]
+            
+            # Apply padding
+            image = TF.pad(image, padding, fill=0)
+            if image.size[0] != 224 or image.size[1] != 224:
+                print(image.size)
+                exit(1)
+            
+            # Update coordinates for padding
+            if bboxes is not None:
+                bboxes[:, [0,2]] += pad_w//2
+                bboxes[:, [1,3]] += pad_h//2
+                
+            if kps is not None:
+                kps[:, 0::2] += pad_w//2
+                kps[:, 1::2] += pad_h//2
+                
+        return image, bboxes, kps
 
 class OCRSafeAugment:
     def __init__(self, strength=0.5):

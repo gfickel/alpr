@@ -9,6 +9,7 @@ import time
 import numpy as np
 from torch.utils.data import DataLoader
 from torchinfo import summary
+import torchvision.transforms as transforms
 import wandb
 import timm
 from timm.data.config import resolve_model_data_config
@@ -21,158 +22,221 @@ from dataloader import ALPRDataset
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-
-def train_detection(model, train_dataloader, val_dataloader, device, vocab=None, 
-                   num_epochs=50, start_epoch=0, temp_model_path=None,
-                   use_wandb=False, start_lr=1e-3, min_lr=1e-5, version=None, compile=False, **kwargs):
+def train_detection(
+    model,
+    train_dataloader,
+    val_dataloader,
+    device,
+    vocab=None,
+    start_epoch=0,
+    num_epochs=50,
+    version='',
+    head_only_epochs=10,
+    start_lr=1e-3,
+    min_lr=1e-5,
+    backbone_lr_factor=0.1,
+    weight_decay=0.01,
+    plateau_patience=2500,
+    temp_model_path=None,
+    use_wandb=False,
+    compile=False
+):
     """
-    Main training function for detector model
+    Training function with initial head-only training followed by full model training
+    with differential learning rates for backbone and other components.
     """
-    if compile:
-        model = torch.compile(model)
-    
-    optimizer = torch.optim.AdamW(model.parameters(), lr=start_lr, weight_decay=0.01)
-    
-    # Load optimizer state if resuming training
-    if temp_model_path and os.path.exists(temp_model_path):
-        checkpoint = torch.load(temp_model_path)
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        curr_lr = checkpoint['learning_rate']
-        loss_history = checkpoint.get('loss_history', [])
-    else:
-        curr_lr = start_lr
-        loss_history = []
-
-    LOSS_LEN = 400
-    loss_deque = deque(maxlen=LOSS_LEN)
-    
-    for epoch in range(start_epoch, num_epochs):
-        # Training phase
-        model.train()
-        train_losses = []
+    def create_optimizer(model, lr, backbone_lr_factor=1.0):
+        backbone_params = []
+        other_params = []
         
-        for i, data in enumerate(train_dataloader):
-            sum_loss = 0
-            begin = time.time()
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                if 'backbone' in name:
+                    backbone_params.append(param)
+                else:
+                    other_params.append(param)
+        
+        param_groups = [
+            {'params': backbone_params, 'lr': lr * backbone_lr_factor},
+            {'params': other_params, 'lr': lr}
+        ]
+        
+        return torch.optim.AdamW(param_groups, weight_decay=weight_decay)
+    
+    def forward_pass(model, batch, device):
+        images, gt_bboxes, gt_labels, gt_kps, _ = batch
+        batch_size = images.size(0)
+        
+        gt_instances = [
+            SimpleNamespace(**{
+                'bboxes': gt_bboxes[i].to(device),
+                'labels': gt_labels[i].to(device),
+                'kps': gt_kps[i].to(device)
+            }) for i in range(batch_size)
+        ]
+        
+        img_metas = [{'pad_shape': (224, 224, 3), 'img_shape': (224, 224, 3)}] * batch_size
+        
+        cls_score, bbox_pred, kps_pred = model(images.to(device))
+        losses = model.head.loss_by_feat(cls_score, bbox_pred, kps_pred, gt_instances, img_metas)
+        
+        total_loss = sum(
+            loss.item() * (1 if 'kps' not in name else 0.01)
+            for name, loss_group in losses.items()
+            for loss in loss_group
+        )
+        
+        return losses, total_loss
+    
+    def train_epoch(model, dataloader, optimizer, loss_history, curr_lr):
+        model.train()
+        epoch_losses = []
+        
+        for batch in dataloader:
+            optimizer.zero_grad()
+            losses, total_loss = forward_pass(model, batch, device)
             log = {}
             
-            images, gt_bboxes, gt_labels, gt_kps, _ = data
-            batch_size = images.size(0)
+            for loss_name, loss_group in losses.items():
+                for loss_idx, loss in enumerate(loss_group):
+                    loss.backward(retain_graph=True)
+                    log[f'{loss_name}-{loss_idx}'] = float(loss.detach())
             
-            gt_instances_sn = []
-            for j in range(batch_size):
-                gt_instances = {
-                    'bboxes': gt_bboxes[j].to(device),
-                    'labels': gt_labels[j].to(device),
-                    'kps': gt_kps[j].to(device)
-                }
-                gt_instances_sn.append(SimpleNamespace(**gt_instances))
-
-            img_metas = [{
-                'pad_shape': (224, 224, 3),
-                'img_shape': (224, 224, 3),
-            }]*batch_size
-
-            optimizer.zero_grad()
-
-            cls_quality_score, bbox_pred, kps_pred = model(images.to(device))
-            
-            loss = model.head.loss_by_feat(
-                cls_quality_score,
-                bbox_pred,
-                kps_pred,
-                gt_instances_sn,
-                img_metas)
-
-            for loss_name, loss_val in loss.items():
-                for loss_idx, lv in enumerate(loss_val):
-                    lv.backward(retain_graph=True)
-                    log[f'{loss_name}-{loss_idx}'] = float(lv.detach())
-                    mult = 1 if 'kps' not in loss_name else 1/100
-                    sum_loss += log[f'{loss_name}-{loss_idx}']*mult
-
-            train_losses.append(sum_loss)
-            loss_history.append(sum_loss)
             optimizer.step()
+            epoch_losses.append(total_loss)
+            loss_history.append(total_loss)
 
-            if is_in_plateau(loss_history, threshold=500):
-                # Reduce learning rate
+            if use_wandb:
+                log['train_loss'] = total_loss
+                log['learning_rate'] = curr_lr
+                wandb.log(log)
+            
+            # Check for plateau and adjust learning rate if needed
+            if is_in_plateau(loss_history, threshold=plateau_patience):
                 for param_group in optimizer.param_groups:
                     param_group['lr'] *= 0.5
                     curr_lr = param_group['lr']
-                loss_history = []
-                print(f"{version} - Learning rate reduced to {curr_lr}")
-
-            if use_wandb:
-                loss_deque.append(sum_loss)
-                log['iter_time'] = time.time()-begin
-                log['epoch'] = epoch+i/len(train_dataloader)
-                log['learning_rate'] = curr_lr
-                wandb.log(log)
-                if len(loss_deque) == LOSS_LEN:
-                    wandb.log({'train_loss': np.mean(sum_loss)})
-
-        # Validation phase
+                loss_history = []  # Reset loss history after lr change
+                print(f"Learning rate reduced to {curr_lr}")
+                
+                if curr_lr < min_lr:
+                    print("Minimum learning rate reached")
+                    return np.mean(epoch_losses), loss_history, curr_lr, True
+            
+        return np.mean(epoch_losses), loss_history, curr_lr, False
+    
+    def validate(model, dataloader):
         model.eval()
         val_losses = []
+        
         with torch.no_grad():
-            for data in val_dataloader:
-                images, gt_bboxes, gt_labels, gt_kps, _ = data
-                batch_size = images.size(0)
+            for batch in dataloader:
+                _, total_loss = forward_pass(model, batch, device)
+                val_losses.append(total_loss)
                 
-                gt_instances_sn = []
-                for j in range(batch_size):
-                    gt_instances = {
-                        'bboxes': gt_bboxes[j].to(device),
-                        'labels': gt_labels[j].to(device),
-                        'kps': gt_kps[j].to(device)
-                    }
-                    gt_instances_sn.append(SimpleNamespace(**gt_instances))
+        return np.mean(val_losses)
 
-                img_metas = [{
-                    'pad_shape': (224, 224, 3),
-                    'img_shape': (224, 224, 3),
-                }]*batch_size
+    # Load checkpoint if resuming training
+    curr_lr = start_lr
+    loss_history = []
+    training_phase = 1
+    
+    if temp_model_path and os.path.exists(temp_model_path):
+        print(f"Loading checkpoint from {temp_model_path}")
+        checkpoint = torch.load(temp_model_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        curr_lr = checkpoint.get('learning_rate', start_lr)
+        loss_history = checkpoint.get('loss_history', [])
+        start_epoch = checkpoint.get('epoch', 0) + 1
+        training_phase = checkpoint.get('phase', 1)
+        print(f"Resuming from epoch {start_epoch}, phase {training_phase}")
 
-                cls_quality_score, bbox_pred, kps_pred = model(images.to(device))
-                
-                loss = model.head.loss_by_feat(
-                    cls_quality_score,
-                    bbox_pred,
-                    kps_pred,
-                    gt_instances_sn,
-                    img_metas)
-                
-                sum_loss = 0
-                for loss_name, loss_val in loss.items():
-                    for loss_idx, lv in enumerate(loss_val):
-                        mult = 1 if 'kps' not in loss_name else 1/100
-                        sum_loss += float(lv.detach())*mult
-                
-                val_losses.append(sum_loss)
-
-        avg_val_loss = np.mean(val_losses)
-        if use_wandb:
-            wandb.log({
-                'val_loss': avg_val_loss,
-                'epoch': epoch
-            })
+    # Compile model if requested
+    if compile:
+        model = torch.compile(model)
+    
+    # Phase 1: Train head only (if not already completed)
+    if training_phase == 1:
+        for name, param in model.named_parameters():
+            if 'head' not in name:
+                param.requires_grad = False
+        head_optimizer = create_optimizer(model, curr_lr)
         
-        # Save checkpoint
-        if temp_model_path:
-            checkpoint = {
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'epoch': epoch,
-                'learning_rate': curr_lr,
-                'loss_history': loss_history
-            }
-            torch.save(checkpoint, temp_model_path)
+        if temp_model_path and os.path.exists(temp_model_path):
+            head_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         
-        print(f'Epoch {epoch}: Train Loss = {np.mean(train_losses):.4f}, Val Loss = {avg_val_loss:.4f}')
+        print("Phase 1: Training head only")
+        for epoch in range(start_epoch, head_only_epochs):
+            train_loss, loss_history, curr_lr, stop_training = train_epoch(
+                model, train_dataloader, head_optimizer, loss_history, curr_lr)
+            val_loss = validate(model, val_dataloader)
+            
+            if use_wandb:
+                wandb.log({
+                    'phase': 1,
+                    'epoch': epoch,
+                    'train_loss': train_loss,
+                    'val_loss': val_loss,
+                    'learning_rate': curr_lr
+                })
+            
+            print(f'Phase 1 - Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
+            
+            # Save checkpoint
+            if temp_model_path:
+                torch.save({
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': head_optimizer.state_dict(),
+                    'epoch': epoch,
+                    'phase': 1,
+                    'learning_rate': curr_lr,
+                    'loss_history': loss_history
+                }, temp_model_path)
+            
+            if stop_training:
+                break
         
-        if curr_lr < min_lr:
-            break
+        training_phase = 2
+        start_epoch = 0
+        curr_lr = start_lr
+        loss_history = []
+    
+    # Phase 2: Train full model with different learning rates
+    if training_phase == 2:
+        for param in model.parameters():
+            param.requires_grad = True
+        full_optimizer = create_optimizer(model, curr_lr, backbone_lr_factor)
+        
+        print("Phase 2: Training full model")
+        for epoch in range(start_epoch, num_epochs):
+            train_loss, loss_history, curr_lr, stop_training = train_epoch(
+                model, train_dataloader, full_optimizer, loss_history, curr_lr)
+            val_loss = validate(model, val_dataloader)
+            
+            if use_wandb:
+                wandb.log({
+                    'phase': 2,
+                    'epoch': epoch,
+                    'train_loss': train_loss,
+                    'val_loss': val_loss,
+                    'learning_rate': curr_lr
+                })
+            
+            print(f'Phase 2 - Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
+            
+            # Save checkpoint
+            if temp_model_path:
+                torch.save({
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': full_optimizer.state_dict(),
+                    'epoch': epoch,
+                    'phase': 2,
+                    'learning_rate': curr_lr,
+                    'loss_history': loss_history
+                }, temp_model_path)
+            
+            if stop_training:
+                break
 
 
 def is_in_plateau(vec, threshold):
@@ -246,21 +310,17 @@ if __name__ == '__main__':
     summary(model, input_size=(2, 3, 224, 224))
     
     model.to(DEVICE)
-    if args.compile:
-        model = torch.compile(model)
-
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.start_lr, weight_decay=0.01)
     batch_size = args.batch_size if not args.debug else 4
 
     model_data_config = resolve_model_data_config(model.backbone)
-    data_transform = timm.data.create_transform(
-        input_size=model_data_config['input_size'],
-        mean=model_data_config['mean'],
-        std=model_data_config['std'],
-        interpolation=model_data_config['interpolation'],
-        crop_mode='squash',
-        crop_pct=1,
-    )
+    data_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=model_data_config['mean'],
+            std=model_data_config['std']
+        )
+    ])
 
     if not args.debug:
         train_dataset = ALPRDataset(
@@ -287,7 +347,7 @@ if __name__ == '__main__':
 
     # Train the model using the external train_model function
     train_model(
-        project='alpr_detection_v4'
+        project='alpr_detection_v4',
         model=model,
         train_function=train_detection,
         train_dataloader=train_dataloader,

@@ -13,5 +13,8 @@ schedulefree
 timm>=0.9
 wandb
 torchinfo
+pyopengl
+glfw
+opencv-python
 # torch==2.1
 # openmim

@@ -98,7 +98,8 @@ class GFLHead(nn.Module):
                  stacked_convs=4,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
                  reg_max=16,
-                 use_kps=False):
+                 use_kps=False,
+                 zero_weights=False):
         super().__init__()
         self.num_classes = num_classes
         self.in_channels = in_channels
@@ -122,13 +123,13 @@ class GFLHead(nn.Module):
         self.giou_loss = GIoULoss()
         self.loss_cls = quality_focal_loss
         self.loss_kps = SmoothL1Loss(beta=0.1111111111111111, loss_weight=0.1)
-        self._init_layers()
+        self._init_layers(zero_weights)
 
     @property
     def num_anchors(self) -> int:
         return self.prior_generator.num_base_priors[0]
 
-    def _init_layers(self):
+    def _init_layers(self, zero_weights):
         """Initialize layers of the head."""
         self.relu = nn.ReLU(inplace=True)
         self.cls_convs = nn.ModuleList()
@@ -156,12 +157,13 @@ class GFLHead(nn.Module):
         self.scales = nn.ModuleList(
             [Scale(1.0) for _ in self.prior_generator.strides])
         
-        # Initialize all conv layers weights to zero
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.zeros_(m.weight)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
+        if zero_weights:
+            # Initialize all conv layers weights to zero
+            for m in self.modules():
+                if isinstance(m, nn.Conv2d):
+                    nn.init.zeros_(m.weight)
+                    if m.bias is not None:
+                        nn.init.zeros_(m.bias)
 
 
     def _conv_module(self, in_channels: int,
@@ -666,7 +668,7 @@ class GFLHead(nn.Module):
               box with shape [num_bboxes].
         """
         cfg = self.test_cfg if cfg is None else cfg
-        nms_pre = -1
+        nms_pre = 20
 
         mlvl_bboxes = []
         mlvl_scores = []
