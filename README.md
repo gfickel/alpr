@@ -24,6 +24,9 @@ The pipeline processes images sequentially: first detecting license plates, then
 
 There are many Text Recognition networks available, and I've observed a trend of incorporating Language Models within them. This is definitely an interesting approach, since it introduces a language prior that helps in many cases. However, license plate recognition is not one of them. While plates do have some structure (i.e., fixed character length), it is very limited, and ultimately these characters are practically random. Therefore, I've chosen an OCR solution that does not utilize any language modeling.
 
+You will notice that the Detection network is using [MMDetection](https://github.com/open-mmlab/mmdetection), however I'm not adding it to my requirements. While I love the entire Open MMlab family, their installation process can be challenging and forces us to use an older version of PyTorch. Instead, I've chosen to incorporate the necessary code directly into this repository, making minimal modifications where needed. This makes the codebase more portable and easier to debug.
+
+
 ## Datasets
 
 I'm using the [Chinese City Parking Dataset](https://github.com/detectRecog/CCPD). It is quite big (over 200k images), and free to download by anyone. Notice that there are multiple scenarios within this dataset, but I'm just using the following:
@@ -57,6 +60,17 @@ conda create --name alpr python=3.8
 conda activate alpr
 python -m pip install -r requirements.txt
 ```
+
+
+## Download Network Weights
+
+You can get both my Detection and MaskOCR network weights here:
+
+[MaskOCR](https://drive.google.com/file/d/1vxfv_RVTuGqih9NCwEmUJmZGD8LIQHPg/view?usp=sharing)
+[MaskOCR Config](https://drive.google.com/file/d/1ByBFBNKRXbGbHYdxsF5aeF6GHZcgKVc-/view?usp=sharing)
+[Detector](https://drive.google.com/file/d/1lnd88KdTEv3HyKqw_FRRh82GOKJ9EYK0/view?usp=sharing)
+
+
 
 ## Train
 
@@ -107,7 +121,7 @@ MaskOCR: 93% accuracy on ccpd_challenge, the hardest set and usually reserved fo
 
 You can run it with:
 ```sh
-python test.py --model_path model_bin/my_model_v5.pth --model_config configs/v5.json
+python test.py --model_path model_bin/my_model_v43.pth --model_config configs/v43.json
 ```
 
 You must pass the MaskOCR binary model and its respective configuration file.
@@ -118,7 +132,7 @@ You must pass the MaskOCR binary model and its respective configuration file.
 I've made a (Dear ImGui)[https://github.com/ocornut/imgui] python app whose interface you can see on the top of this Readme. You run with the following command:
 
 ```sh
-python alpr_viewer.py --detector_model model_bin/detection_v5_final.pth --ocr_model model_bin/my_model_v5.pth --ocr_config configs/v5.json --image_folder /path/to/CCPD2019/ccpd_challenge
+python alpr_viewer.py --detector_model model_bin/detection_v49_final.pth --ocr_model model_bin/my_model_v43.pth --ocr_config configs/v43.json --image_folder /path/to/CCPD2019/ccpd_challenge
 ```
 
 It will open a Window showing the plate recognitions on the images of the given image_folder path. You can pass the images with the next/previous button. And perhaps the most fun way to use it is to ommit the image_folder argument, and the app will open your webcam instead.
