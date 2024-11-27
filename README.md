@@ -131,7 +131,7 @@ You must pass the MaskOCR binary model and its respective configuration file.
 
 ## Silly GUI app
 
-I've made a (Dear ImGui)[https://github.com/ocornut/imgui] python app whose interface you can see on the top of this Readme. You run with the following command:
+I've made a [Dear ImGui](https://github.com/ocornut/imgui) python app whose interface you can see on the top of this Readme. You run with the following command:
 
 ```sh
 python alpr_viewer.py --detector_model model_bin/detection_v49_final.pth --ocr_model model_bin/my_model_v43.pth --ocr_config configs/v43.json --image_folder /path/to/CCPD2019/ccpd_challenge
