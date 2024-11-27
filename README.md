@@ -97,10 +97,10 @@ This will save the cropped images within the CCPD2019 folder with a name f'plate
 
 
 ```sh
-python train.py --batch_size 1024 --dataset_path /path/to/CCPD2019/
+python train.py --batch_size 128 --dataset_path /path/to/CCPD2019/ --end_epoch 300 --min_lr 1e-5 --start_lr 1e-2 --wandb --num_workers 4
 ```
 
-This will train a Detection model and save it to 'model_bin/' folder.
+This will train a Detection model and save it to 'model_bin/' folder. Actually, this is exactly the training parameters used on the provided Detection weights.
 
 
 And finally, the OCR network:
@@ -114,6 +114,8 @@ This will train the MaskOCR network for plate OCR and save it on 'model_bin/' fo
 ```sh
 python maskocr_train.py --help
 ```
+
+And if you wish to replicate my results you can check the provided config on Download Network Weights Section.
 
 ## Benchmarks
 
