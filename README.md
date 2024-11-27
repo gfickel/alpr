@@ -22,6 +22,7 @@ It is composed of two networks:
 
 The pipeline processes images sequentially: first detecting license plates, then performing OCR on each detected plate region. Quite simple and somewhat fast.
 
+There are many Text Recognition networks available, and I've observed a trend of incorporating Language Models within them. This is definitely an interesting approach, since it introduces a language prior that helps in many cases. However, license plate recognition is not one of them. While plates do have some structure (i.e., fixed character length), it is very limited, and ultimately these characters are practically random. Therefore, I've chosen an OCR solution that does not utilize any language modeling.
 
 ## Datasets
 
@@ -91,7 +92,7 @@ This will train a Detection model and save it to 'model_bin/' folder.
 And finally, the OCR network:
 
 ```sh
-python maskocr_train.py --dataset_path "/path/to/CCPD2019/" --batch_size 1024 --img_height 48 --img_width 192 --start_lr 0.001 --aug_strength 2.0 --plateau_thr 2000
+python maskocr_train.py --dataset_path /path/to/CCPD2019/ --batch_size 1024 --img_height 48 --img_width 192 --start_lr 0.001 --aug_strength 2.0 --plateau_thr 2000
 ```
 
 This will train the MaskOCR network for plate OCR and save it on 'model_bin/' folder. Notice that there are several options that you can tweek, and you can read more about them with the following:
@@ -110,6 +111,19 @@ python test.py --model_path model_bin/my_model_v5.pth --model_config configs/v5.
 ```
 
 You must pass the MaskOCR binary model and its respective configuration file.
+
+
+## Silly GUI app
+
+I've made a (Dear ImGui)[https://github.com/ocornut/imgui] python app whose interface you can see on the top of this Readme. You run with the following command:
+
+```sh
+python alpr_viewer.py --detector_model model_bin/detection_v5_final.pth --ocr_model model_bin/my_model_v5.pth --ocr_config configs/v5.json --image_folder /path/to/CCPD2019/ccpd_challenge
+```
+
+It will open a Window showing the plate recognitions on the images of the given image_folder path. You can pass the images with the next/previous button. And perhaps the most fun way to use it is to ommit the image_folder argument, and the app will open your webcam instead.
+
+All of this should be portable to Linux/Windows/Mac, but I've only tested on Ubuntu.
 
 
 # Dev Notes
