@@ -66,9 +66,9 @@ python -m pip install -r requirements.txt
 
 You can get both my Detection and MaskOCR network weights here:
 
-[MaskOCR](https://drive.google.com/file/d/1vxfv_RVTuGqih9NCwEmUJmZGD8LIQHPg/view?usp=sharing)
-[MaskOCR Config](https://drive.google.com/file/d/1ByBFBNKRXbGbHYdxsF5aeF6GHZcgKVc-/view?usp=sharing)
-[Detector](https://drive.google.com/file/d/1lnd88KdTEv3HyKqw_FRRh82GOKJ9EYK0/view?usp=sharing)
+- [MaskOCR](https://drive.google.com/file/d/1vxfv_RVTuGqih9NCwEmUJmZGD8LIQHPg/view?usp=sharing)
+- [MaskOCR Config](https://drive.google.com/file/d/1ByBFBNKRXbGbHYdxsF5aeF6GHZcgKVc-/view?usp=sharing)
+- [Detector](https://drive.google.com/file/d/1lnd88KdTEv3HyKqw_FRRh82GOKJ9EYK0/view?usp=sharing)
 
 
 
