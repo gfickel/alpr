@@ -147,8 +147,8 @@ All of this should be portable to Linux/Windows/Mac, but I've only tested on Ubu
 Since I tried to keep the requirements at a minimum and using mostly local code, I've copied some code instead of importing the libraries. Here they are:
 
 - **vit_mae.py**: ViT and MAE implementation from the awesome [ViT-pytorch](https://github.com/lucidrains/vit-pytorch/)
-- **head.py**, **anchor_generator**, **losses.py** and **utils.py**: mostly code from [MMDetectionpytorch](https://github.com/open-mmlab/mmdetection), with some small changes.
-- **bifpn.py**: BiFPN implementation from the great author of TIMM, taken from [EfficientDetpytorch](https://github.com/rwightman/efficientdet-pytorch/)
+- **head.py**, **anchor_generator**, **losses.py** and **utils.py**: mostly code from [MMDetection](https://github.com/open-mmlab/mmdetection), with some small changes.
+- **bifpn.py**: BiFPN implementation from the great author of TIMM, taken from [EfficientDet](https://github.com/rwightman/efficientdet-pytorch/)
 
 
 # Dev Notes
