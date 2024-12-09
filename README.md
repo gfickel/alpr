@@ -142,6 +142,15 @@ It will open a Window showing the plate recognitions on the images of the given 
 All of this should be portable to Linux/Windows/Mac, but I've only tested on Ubuntu.
 
 
+# 3rd Party Code
+
+Since I tried to keep the requirements at a minimum and using mostly local code, I've copied some code instead of importing the libraries. Here they are:
+
+- **vit_mae.py**: ViT and MAE implementation from the awesome (ViT-Pytorch)[https://github.com/lucidrains/vit-pytorch/]
+- **head.py**, **anchor_generator**, **losses.py** and **utils.py**: mostly code from (MMDetection)[https://github.com/open-mmlab/mmdetection], with some small changes.
+- **bifpn.py**: BiFPN implementation from the great author of TIMM, taken from (EfficientDet)[https://github.com/rwightman/efficientdet-pytorch/]
+
+
 # Dev Notes
 
 ## Alternative ideas that did not pan out
