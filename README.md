@@ -119,6 +119,7 @@ And if you wish to replicate my results you can check the provided config on Dow
 
 ## Benchmarks
 
+### OCR
 MaskOCR: 93% accuracy on ccpd_challenge, the hardest set and usually reserved for testing. Notice that there are some annotation problems, mostly invalid plates and humanly unreadable plates. We can argue that "unreadable" is a little bit subjective, and that the model should be able to outperform humans. However this makes it quite challenging to detect if the mistake came from the network or the annotation.
 
 You can run it with:
@@ -128,6 +129,12 @@ python test.py --model_path model_bin/my_model_v43.pth --model_config configs/v4
 
 You must pass the MaskOCR binary model and its respective configuration file.
 
+
+### Runtime
+
+The following tests where run on my personal notebook, with an AMD Ryzen 7 5700U, 12GB RAM, Ubuntu 23.04.
+- **Detection**: ~80ms
+- **OCR (per plate)**: ~48ms
 
 ## Silly GUI app
 
